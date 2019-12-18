@@ -1,42 +1,28 @@
+#include "z80.h"
+#include "memory.h"
+#include "ports.h"
 
 
-typedef struct t_r16
-{
-    uint16 af, bc, de, hl, ix, iy;
-};
+#define FLAG_C    0x01
+#define FLAG_N    0x02
+#define FLAG_P    0x04
+#define FLAG_V    FLAG_P
+#define FLAG_3    0x08
+#define FLAG_H    0x10
+#define FLAG_5    0x20
+#define FLAG_Z    0x40
+#define FLAG_S    0x80
 
-# if defined __BIG_ENDIAN__
 
-typedef struct t_r8
-{
-    uint8 a, f, b, c, d, e, h, l, ixh, x, iyh, y;
-};
+uint8_t sz53_table[0x100]; // The S, Z, 5 and 3 bits of the index
+uint8_t parity_table[0x100]; // The parity of the lookup value
+uint8_t sz53p_table[0x100]; // OR the above two tables together
 
-#else
-
-typedef struct t_r8
-{
-    uint8 f, a, c, b, e, d, l, h, x, iyh, y, iyh;
-};
-
-#endif
-
-struct z80
-{
-    uint16 pc, sp, memptr;
-    uint8 i, r;
-    uint8 iff1, iff2;
-    union
-    {
-        t_r16 r16;
-        t_r8 r8;
-    }
-}
 
 void z80_init()
 {
     int i,j,k;
-    uint8 parity;
+    uint8_t parity;
 
     for (i = 0; i < 0x100; i++) {
         sz53_table[i] = i & (FLAG_3 | FLAG_5 | FLAG_S);
@@ -57,12 +43,12 @@ void z80_init()
 void z80_reset()
 {
     z80.r16.af = z80.r16.af_ = 0xffff;
-    z80.i = z80.r = z80.r7 = 0;
+    z80.i = z80.r = 0;
     z80.pc = 0;
     z80.sp = 0xffff;
-    z80.iff1 = z80.iff2 = z80.im = 0;
-    z80.halted = 0;
-    z80.iff2_read = 0;
+    z80.iff1 = z80.iff2 = 0;
+    z80.im = IM0;
+    z80.halted = false;
     z80.q = 0;
 
     z80.r16.bc = z80.r16.de = z80.r16.hl = 0;
@@ -80,10 +66,12 @@ void z80_interrupt()
 
 }
 
-void z80_opcocde(*memory_reader: t_memory_reader, memory_writer: t_memory_writer, port_reader: t_port_reader, port_writer: t_port_writer)
+void z80_opcocde(t_memory_reader mr, t_memory_writer mw, t_port_reader pr, t_port_writer pw)
 {
-    uint8 command;
-    command = memory_reader(z80.pc);
+    uint8_t command;
+    command = mr(z80.pc);
+
+    bool cb_shifted = false;
 
     if (cb_shifted) {
         switch (command) {
@@ -350,7 +338,7 @@ void z80_opcocde(*memory_reader: t_memory_reader, memory_writer: t_memory_writer
             0xfe SET 7,(HL)
             0xff SET 7,A
             */
-
+        }
     }
 
     switch (command) {
