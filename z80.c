@@ -1,6 +1,5 @@
 #include "z80.h"
-#include "memory.h"
-#include "ports.h"
+#include <stddef.h>
 
 
 #define FLAG_C    0x01
@@ -24,7 +23,7 @@ uint8_t parity_table[0x100]; // The parity of the lookup value
 uint8_t sz53p_table[0x100]; // OR the above two tables together
 
 
-void z80_init()
+void z80_init(t_memory_reader mr, t_memory_writer mw, t_port_reader pr, t_port_writer pw)
 {
     int i,j,k;
     uint8_t parity;
@@ -42,8 +41,13 @@ void z80_init()
     }
     sz53_table[0] |= FLAG_Z;
     sz53p_table[0] |= FLAG_Z;
-    z80.state = 0;
+    z80.states = 0;
     z80.irq = false;
+
+    z80.mr = mr;
+    z80.mw = mw;
+    z80.pr = pr;
+    z80.pw = pw;
 }
 
 
@@ -75,7 +79,7 @@ void z80_interrupt()
 
 uint8_t load_byte()
 {
-    uint8_t tmp_byte = mr(z80.pc);
+    uint8_t tmp_byte = z80.mr(z80.pc);
     z80.pc++;
     z80.states += 4; // is it correct ?
     return tmp_byte;
@@ -84,10 +88,10 @@ uint8_t load_byte()
 
 uint16_t load_word()
 {
-    uint16_t tmp_word = mr(z80.pc) | (mr(z80.pc + 1) << 8);
+    uint16_t tmp_word = z80.mr(z80.pc) | (z80.mr(z80.pc + 1) << 8);
     z80.pc += 2;
     z80.states += 8; // is it correct ?
-    return tmp_byte;
+    return tmp_word;
 }
 
 
@@ -107,12 +111,13 @@ uint8_t *load_operand(uint8_t n, uint16_t *tmp_byte_address, uint8_t *tmp_byte)
                 return &z80.r8.ixh;
             case 0x05:
                 return &z80.r8.ixl;
-            case 0x06:
-                int8_t offset = mr(z80.pc);
+            case 0x06: {
+                int8_t offset = z80.mr(z80.pc);
                 z80.pc++;
                 z80.states += 4; // is it correct ?
-                *tmp_byte = mr(*tmp_byte_address = z80.r16.ix + offset);
+                *tmp_byte = z80.mr(*tmp_byte_address = z80.r16.ix + offset);
                 return tmp_byte;
+            }
             case 0x07:
                 return &z80.r8.a;
         }
@@ -131,12 +136,13 @@ uint8_t *load_operand(uint8_t n, uint16_t *tmp_byte_address, uint8_t *tmp_byte)
                 return &z80.r8.iyh;
             case 0x05:
                 return &z80.r8.iyl;
-            case 0x06:
-                int8_t offset = mr(z80.pc);
+            case 0x06: {
+                int8_t offset = z80.mr(z80.pc);
                 z80.pc++;
                 z80.states += 4; // is it correct ?
-                *tmp_byte = mr(*tmp_byte_address = z80.r16.iy + offset);
+                *tmp_byte = z80.mr(*tmp_byte_address = z80.r16.iy + offset);
                 return tmp_byte;
+            }
             case 0x07:
                 return &z80.r8.a;
         }
@@ -155,7 +161,7 @@ uint8_t *load_operand(uint8_t n, uint16_t *tmp_byte_address, uint8_t *tmp_byte)
         case 0x05:
             return &z80.r8.l;
         case 0x06:
-            *tmp_byte = mr(*tmp_byte_address = z80.r16.hl);
+            *tmp_byte = z80.mr(*tmp_byte_address = z80.r16.hl);
             return tmp_byte;
         case 0x07:
             return &z80.r8.a;
@@ -164,7 +170,7 @@ uint8_t *load_operand(uint8_t n, uint16_t *tmp_byte_address, uint8_t *tmp_byte)
 }
 
 
-void store_operand(uint8_t n, uint8_t tmp_byte);
+void store_operand(uint8_t n, uint8_t tmp_byte)
 {
    if (z80.shifts & DD_SHIFT) {
         switch (n) {
@@ -186,14 +192,16 @@ void store_operand(uint8_t n, uint8_t tmp_byte);
             case 0x05:
                 z80.r8.ixl = tmp_byte;
                 return;
-            case 0x06:
-                int8_t offset = mr(z80.pc);
+            case 0x06: {
+                int8_t offset = z80.mr(z80.pc);
                 z80.pc++;
                 z80.states += 4; // is it correct ?
-                mw(z80.r16.ix + offset, tmp_byte);
+                z80.mw(z80.r16.ix + offset, tmp_byte);
                 return;
+            }
             case 0x07:
-                return &z80.r8.a;
+                z80.r8.a = tmp_byte;
+                return;
         }
     }
     if (z80.shifts & FD_SHIFT) {
@@ -216,14 +224,16 @@ void store_operand(uint8_t n, uint8_t tmp_byte);
             case 0x05:
                 z80.r8.iyl = tmp_byte;
                 return;
-            case 0x06:
-                int8_t offset = mr(z80.pc);
+            case 0x06: {
+                int8_t offset = z80.mr(z80.pc);
                 z80.pc++;
                 z80.states += 4; // is it correct ?
-                mw(z80.r16.iy + offset, tmp_byte);
+                z80.mw(z80.r16.iy + offset, tmp_byte);
                 return;
+            }
             case 0x07:
-                return &z80.r8.a;
+                z80.r8.a = tmp_byte;
+                return;
         }
     }
     switch (n) {
@@ -246,7 +256,7 @@ void store_operand(uint8_t n, uint8_t tmp_byte);
             z80.r8.l = tmp_byte;
             return;
         case 0x06:
-            mw(z80.r16.hl, tmp_byte);
+            z80.mw(z80.r16.hl, tmp_byte);
             return;
         case 0x07:
             z80.r8.a = tmp_byte;
@@ -258,17 +268,17 @@ void store_operand(uint8_t n, uint8_t tmp_byte);
 uint8_t *cb_load_operand(uint8_t n, uint16_t *tmp_byte_address, uint8_t *tmp_byte)
 {
     if (z80.shifts & DD_SHIFT) {
-        int8_t offset = mr(z80.pc);
+        int8_t offset = z80.mr(z80.pc);
         z80.pc++;
         z80.states += 4; // is it correct ?
-        *tmp_byte = mr(*tmp_byte_address = z80.r16.ix + offset);
+        *tmp_byte = z80.mr(*tmp_byte_address = z80.r16.ix + offset);
         return tmp_byte;
     }
     if (z80.shifts & FD_SHIFT) {
-        int8_t offset = mr(z80.pc);
+        int8_t offset = z80.mr(z80.pc);
         z80.pc++;
         z80.states += 4; // is it correct ?
-        *tmp_byte = mr(*tmp_byte_address = z80.r16.iy + offset);
+        *tmp_byte = z80.mr(*tmp_byte_address = z80.r16.iy + offset);
         return tmp_byte;
     }
     switch (n) {
@@ -285,7 +295,7 @@ uint8_t *cb_load_operand(uint8_t n, uint16_t *tmp_byte_address, uint8_t *tmp_byt
         case 0x05:
             return &z80.r8.l;
         case 0x06:
-            *tmp_byte = mr(*tmp_byte_address = z80.r16.hl);
+            *tmp_byte = z80.mr(*tmp_byte_address = z80.r16.hl);
             return tmp_byte;
         case 0x07:
             return &z80.r8.a;
@@ -297,7 +307,7 @@ uint8_t *cb_load_operand(uint8_t n, uint16_t *tmp_byte_address, uint8_t *tmp_byt
 void cb_store_operand(uint8_t n, uint16_t tmp_byte_address, uint8_t tmp_byte)
 {
     if (z80.shifts & (DD_SHIFT | FD_SHIFT)) {
-        mw(tmp_byte_address, tmp_byte);
+        z80.mw(tmp_byte_address, tmp_byte);
         switch (n) {
             case 0x00:
                 z80.r8.b = tmp_byte;
@@ -323,22 +333,22 @@ void cb_store_operand(uint8_t n, uint16_t tmp_byte_address, uint8_t tmp_byte)
         }
         return;
     } else if (n == 0x06) { // not shifted
-        mw(tmp_byte_address, tmp_byte);
+        z80.mw(tmp_byte_address, tmp_byte);
     }
 }
 
 
-void z80_opcocde(t_memory_reader mr, t_memory_writer mw, t_port_reader pr, t_port_writer pw)
+void z80_opcocde()
 {
     uint8_t command;
     uint16_t tmp_byte_address;
     uint8_t tmp_byte;
 
-    command = mr(z80.pc);
+    command = z80.mr(z80.pc);
 
     if (!z80.shifts && z80.irq /* && interrupts_enabled */) {
 
-        z80.interrupt();
+        z80_interrupt();
     }
 
     if (z80.shifts & CB_SHIFT) {
@@ -349,20 +359,42 @@ void z80_opcocde(t_memory_reader mr, t_memory_writer mw, t_port_reader pr, t_por
         bit = ((command & 0x38) >> 3);
 
         switch (command & 0xf8) {
-            case 0x00: // RLC (r)
-            case 0x08: // RRC (r)
-            case 0x10: // RL (r)
-            case 0x18: // RR (r)
-            case 0x20: // SLA (r)
-            case 0x28: // SRA (r)
-            case 0x30: // SLL (r)
-            case 0x38: // SRL (r)
+            case 0x00:
+                // RLC (r)
+                break;
+            case 0x08:
+                // RRC (r)
+                break;
+            case 0x10:
+                // RL (r)
+                break;
+            case 0x18:
+                // RR (r)
+                break;
+            case 0x20:
+                // SLA (r)
+                break;
+            case 0x28:
+                // SRA (r)
+                break;
+            case 0x30:
+                // SLL (r)
+                break;
+            case 0x38:
+                // SRL (r)
+                break;
         }
 
         switch (command & 0xc0) {
-            case 0x40: // BIT (bit), (r)
-            case 0x80: // RES (bit), (r)
-            case 0xc0: // SET (bit), (r)
+            case 0x40:
+                // BIT (bit), (r)
+                break;
+            case 0x80:
+                // RES (bit), (r)
+                break;
+            case 0xc0:
+                // SET (bit), (r)
+                break;
         }
 
         cb_store_operand(command & 0x07, tmp_byte_address, tmp_byte);
@@ -566,7 +598,7 @@ void z80_opcocde(t_memory_reader mr, t_memory_writer mw, t_port_reader pr, t_por
                             // INC (r)
                             r = load_operand((command >> 3) & 0x07, &tmp_byte_address, &tmp_byte);
                             *r++;
-                            store_operand((command >> 3) & 0x07, r);
+                            store_operand((command >> 3) & 0x07, *r);
                             break;
                         case 0x05:
                             // DEC (r)
@@ -574,12 +606,13 @@ void z80_opcocde(t_memory_reader mr, t_memory_writer mw, t_port_reader pr, t_por
                             *r++;
                             store_operand((command >> 3) & 0x07, *r);
                             break;
-                        case 0x06:
+                        case 0x06: {
                             // LD (r),nn
-                            uint tmp_byte = load_byte();
+                            uint8_t tmp_byte = load_byte();
                             *r++;
                             store_operand((command >> 3) & 0x07, tmp_byte);
                             break;
+                        }
                     }
                 } else {
                     switch (command) {
@@ -598,13 +631,13 @@ void z80_opcocde(t_memory_reader mr, t_memory_writer mw, t_port_reader pr, t_por
                         case 0x07:
                             // RLCA
                             break;
-                        case 0x08
+                        case 0x08:
                             // EX AF,AF'
                             break;
                         case 0x09:
                             // ADD HL,BC
                             break;
-                        case 0x0a
+                        case 0x0a:
                             // LD A,(BC)
                             break;
                         case 0x0b:
@@ -716,7 +749,7 @@ void z80_opcocde(t_memory_reader mr, t_memory_writer mw, t_port_reader pr, t_por
                 }
                 break;
 
-            case 0x80:
+            case 0x80: {
                 uint8_t *r;
                 r = load_operand(command & 0x07, &tmp_byte_address, &tmp_byte);
 
@@ -742,8 +775,11 @@ void z80_opcocde(t_memory_reader mr, t_memory_writer mw, t_port_reader pr, t_por
                     case 0xb8:
                         // CP (r)
                         break;
-            case 0xc0:
-                switch ((command & 0x07) {
+                }
+            }
+
+            case 0xc0: {
+                switch (command & 0x07) {
                     // FLAG = (NZ Z NC C PO PE P M)
                     case 0x00:
                         // RET (FLAG)
@@ -754,10 +790,11 @@ void z80_opcocde(t_memory_reader mr, t_memory_writer mw, t_port_reader pr, t_por
                     case 0x04:
                         // CALL (FLAG),nnnn
                         break;
-                    case 0x07:
+                    case 0x07: {
                         uint16_t address = (command & 0x38);
                         // RST (address)
                         break;
+                    }
                 }
                 switch (command) {
                     case 0xc1:
@@ -861,6 +898,7 @@ void z80_opcocde(t_memory_reader mr, t_memory_writer mw, t_port_reader pr, t_por
                         // CP nn
                         break;
                 }
+            }
         }
     }
 }

@@ -3,7 +3,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-
+#include "memory.h"
+#include "ports.h"
 
 typedef struct
 {
@@ -14,14 +15,14 @@ typedef struct
 
 typedef struct
 {
-    uint8_t a, f, b, c, d, e, h, l, a_, f_, b_, c_, d_, e_, h_, l_, ixh, x, iyh, y;
+    uint8_t a, f, b, c, d, e, h, l, a_, f_, b_, c_, d_, e_, h_, l_, ixh, ixl, iyh, iyl;
 } t_r8;
 
 #else
 
 typedef struct
 {
-    uint8_t f, a, c, b, e, d, l, h, f_, a_, c_, b_, e_, d_, l_, h_, x, ixh, y, iyh;
+    uint8_t f, a, c, b, e, d, l, h, f_, a_, c_, b_, e_, d_, l_, h_, ixl, ixh, iyl, iyh;
 } t_r8;
 
 #endif
@@ -43,6 +44,12 @@ typedef struct
     int states;
     int shifts;
     bool irq;
+
+    t_memory_reader mr;
+    t_memory_writer mw;
+    t_port_reader pr;
+    t_port_writer pw;
+
 } t_z80;
 
 t_z80 z80;

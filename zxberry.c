@@ -4,16 +4,16 @@
 
 int main() {
 
-    z80_init();
+    //z80_init();
 
-    z80.r16.bc = 0x1234;
-
-
-    printf("Hello, World!");
+    //z80.r16.bc = 0x1234;
 
 
-    printf("B = %x\n", z80.r8.b);
-    printf("C = %x\n", z80.r8.c);
+    printf("Hello, World!\n");
+
+
+    //printf("B = %x\n", z80.r8.b);
+    //printf("C = %x\n", z80.r8.c);
 
     return 0;
 }
