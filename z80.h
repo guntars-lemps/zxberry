@@ -40,6 +40,9 @@ typedef struct
         t_r16 r16;
         t_r8 r8;
     };
+    int states;
+    int shifts;
+    bool irq;
 } t_z80;
 
 t_z80 z80;
