@@ -1,7 +1,6 @@
 #ifndef PORTS_H
 #define PORTS_H
 
-
 #include <stdint.h>
 
 typedef uint8_t (*t_port_reader)(uint16_t address);
