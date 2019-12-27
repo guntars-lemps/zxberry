@@ -1,5 +1,6 @@
 #include "z80.h"
 #include <stddef.h>
+#include <stdio.h>
 
 
 #define FLAG_C    0x01
@@ -21,6 +22,7 @@
 uint8_t sz53_table[0x100]; // The S, Z, 5 and 3 bits of the index
 uint8_t parity_table[0x100]; // The parity of the lookup value
 uint8_t sz53p_table[0x100]; // OR the above two tables together
+uint16_t daa_table[0x800]; // AF values for DAA operation
 
 uint8_t halfcarry_add_table[8] = {0, FLAG_H, FLAG_H, FLAG_H,      0, 0,      0, FLAG_H};
 uint8_t halfcarry_sub_table[8] = {0,      0, FLAG_H,      0, FLAG_H, 0, FLAG_H, FLAG_H};
@@ -46,6 +48,38 @@ void z80_init(t_memory_reader mr, t_memory_writer mw, t_port_reader pr, t_port_w
     }
     sz53_table[0] |= FLAG_Z;
     sz53p_table[0] |= FLAG_Z;
+
+    uint16_t a, f;
+    for (a = 0; a < 0x100; a++) {
+        for (f = 0; f < 0x100; f++) {
+            if (!(f & ~(FLAG_H | FLAG_N | FLAG_C))) {
+                uint8_t add = 0;
+                uint8_t carry = (f & FLAG_C);
+                uint8_t a_tmp = a;
+                if (((f & FLAG_H) != 0) || ((a & 0x0f) > 9)) {
+                    add = 6;
+                }
+                if ((carry != 0) || (a > 0x99)) {
+                    add |= 0x60;
+                }
+                if (a > 0x99) {
+                    carry = FLAG_C;
+                }
+                if ((f & FLAG_N) != 0) {
+                    a_tmp = a - add;
+                } else {
+                    a_tmp = a + add;
+                }
+                uint8_t tmp_f = (f & ~(FLAG_H | FLAG_C | FLAG_P)) | carry | parity_table[a_tmp] |
+                                (a_tmp ? 0 : FLAG_Z) |
+                                (a_tmp & (FLAG_3 | FLAG_5 | FLAG_S)) |
+                                ((!(f & FLAG_N) && ((a & 0x0f) > 0x09)) ? FLAG_H : 0) |
+                                (((f & FLAG_N) && (f & FLAG_H) && ((a & 0x0f) < 0x06)) ? FLAG_H : 0);
+                daa_table[a + 0x100 * ((f & 0x03) + ((f >> 2) & 0x04))] = (a_tmp << 8) | tmp_f;
+            }
+        }
+    }
+
     z80.states = 0;
     z80.irq = false;
 
@@ -111,7 +145,6 @@ void add_hl_word(uint16_t word)
                (z80.r8.h & (FLAG_3 | FLAG_5)) | halfcarry_add_table[lookup_byte];
     z80.q = z80.r8.f;
 }
-
 
 
 uint8_t *load_operand(uint8_t n, uint16_t *tmp_byte_address, uint8_t *tmp_byte)
@@ -325,33 +358,7 @@ uint8_t *cb_load_operand(uint8_t n, uint16_t *tmp_byte_address, uint8_t *tmp_byt
 
 void cb_store_operand(uint8_t n, uint16_t tmp_byte_address, uint8_t tmp_byte)
 {
-    if (z80.shifts & (DD_SHIFT | FD_SHIFT)) {
-        z80.mw(tmp_byte_address, tmp_byte);
-        switch (n) {
-            case 0x00:
-                z80.r8.b = tmp_byte;
-                return;
-            case 0x01:
-                z80.r8.c = tmp_byte;
-                return;
-            case 0x02:
-                z80.r8.d = tmp_byte;
-                return;
-            case 0x03:
-                z80.r8.e = tmp_byte;
-                return;
-            case 0x04:
-                z80.r8.h = tmp_byte;
-                return;
-            case 0x05:
-                z80.r8.l = tmp_byte;
-                return;
-            case 0x07:
-                z80.r8.a = tmp_byte;
-                return;
-        }
-        return;
-    } else if (n == 0x06) { // not shifted
+    if (n == 0x06) {
         z80.mw(tmp_byte_address, tmp_byte);
     }
 }
@@ -678,9 +685,8 @@ void z80_opcocde()
                         case 0x06: {
                             // LD (r),nn
                             uint8_t tmp = load_byte();
-                            *r = tmp;
                             z80.q = 0;
-                            store_operand((command >> 3) & 0x07, tmp_byte);
+                            store_operand((command >> 3) & 0x07, tmp);
                             break;
                         }
                     }
@@ -740,6 +746,10 @@ void z80_opcocde()
                             break;
                         case 0x0f:
                             // RRCA
+                            z80.r8.f = (z80.r8.f & (FLAG_P | FLAG_Z | FLAG_S)) | (z80.r8.a & FLAG_C);
+                            z80.r8.a = (z80.r8.a >> 1) | (z80.r8.a << 7);
+                            z80.r8.f |= (z80.r8.a & (FLAG_3 | FLAG_5));
+                            z80.q = z80.r8.f;
                             break;
                         case 0x10:
                             // DJNZ offset
@@ -753,9 +763,14 @@ void z80_opcocde()
                         case 0x13:
                             // INC DE
                             break;
-                        case 0x17:
+                        case 0x17: {
                             // RLA
+                            uint8_t tmp = z80.r8.a;
+                            z80.r8.a = (z80.r8.a << 1) | (z80.r8.f & FLAG_C);
+                            z80.r8.f = (z80.r8.f & (FLAG_P | FLAG_Z | FLAG_S)) | (z80.r8.a & (FLAG_3 | FLAG_5)) | (tmp >> 7);
+                            z80.q = z80.r8.f;
                             break;
+                        }
                         case 0x18:
                             // JR offset
                             break;
@@ -768,9 +783,14 @@ void z80_opcocde()
                         case 0x1b:
                             // DEC DE
                             break;
-                        case 0x1f:
+                        case 0x1f: {
                             // RRA
+                            uint8_t tmp = z80.r8.a;
+                            z80.r8.a = (z80.r8.a >> 1) | (z80.r8.f << 7);
+                            z80.r8.f = (z80.r8.f & (FLAG_P | FLAG_Z | FLAG_S)) | (z80.r8.a & (FLAG_3 | FLAG_5)) | (tmp & FLAG_C);
+                            z80.q = z80.r8.f;
                             break;
+                        }
                         case 0x20:
                             // JR NZ,offset
                             break;
@@ -783,9 +803,12 @@ void z80_opcocde()
                         case 0x23:
                             // INC H L// if shifted then IX / IY
                             break;
-                        case 0x27:
+                        case 0x27: {
                             // DAA
+                            z80.r16.af = daa_table[z80.r8.a + 0x100 * ((z80.r8.f & 3) + ((z80.r8.f >> 2) & 4))];
+                            z80.q = z80.r8.f;
                             break;
+                        }
                         case 0x28:
                             // JR Z,offset
                             break;
@@ -800,6 +823,11 @@ void z80_opcocde()
                             break;
                         case 0x2f:
                             // CPL
+                            z80.r8.a ^= 0xff;
+                            z80.r8.f = (z80.r8.f & (FLAG_C | FLAG_P | FLAG_Z | FLAG_S)) |
+                                       (z80.r8.a & (FLAG_3 | FLAG_5)) |
+                                       (FLAG_N | FLAG_H);
+                            z80.q = z80.r8.f;
                             break;
                         case 0x30:
                             // JR NC,offset
@@ -815,6 +843,9 @@ void z80_opcocde()
                             break;
                         case 0x37:
                             // SCF
+                            z80.r8.f = (z80.r8.f & (FLAG_P | FLAG_Z | FLAG_S)) |
+                                       (((z80.q ^ z80.r8.f) | z80.r8.a) & (FLAG_3 | FLAG_5)) | FLAG_C;
+                            z80.q = z80.r8.f;
                             break;
                         case 0x38:
                             // JR C,offset
@@ -830,6 +861,10 @@ void z80_opcocde()
                             break;
                         case 0x3f:
                             // CCF
+                            z80.r8.f = (z80.r8.f & (FLAG_P | FLAG_Z | FLAG_S)) |
+                                       (((z80.r8.f & FLAG_C) != 0) ? FLAG_H : FLAG_C) |
+                                       (((z80.q ^ z80.r8.f) | z80.r8.a) & (FLAG_3 | FLAG_5));
+                            z80.q = z80.r8.f;
                             break;
                     }
                 }
@@ -837,39 +872,86 @@ void z80_opcocde()
 
                 if (command == 0x76) {
                     // HALT
+                    //.......................................................................!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 } else {
                     // LD (r),(r)
                     uint8_t *r = load_operand(command & 0x07, &tmp_byte_address, &tmp_byte);
                     store_operand((command >> 3) & 0x07, *r);
+                    z80.q = 0;
                 }
                 break;
 
             case 0x80: {
-                uint8_t *r;
-                r = load_operand(command & 0x07, &tmp_byte_address, &tmp_byte);
+                uint8_t *r = load_operand(command & 0x07, &tmp_byte_address, &tmp_byte);
 
                 switch (command & 0xf8) {
-                    case 0x80:
+                    case 0x80: {
                         // ADD A,(r)
+                        uint16_t tmp = (uint16_t)z80.r8.a + *r;
+                        uint8_t lookup_byte = ((z80.r8.a & 0x88) >> 3) | ((*r & 0x88) >> 2) | (uint8_t)((tmp & 0x88) >> 1);
+                        z80.r8.a = tmp;
+                        z80.r8.f = (((tmp & 0x100) != 0) ? FLAG_C : 0) | halfcarry_add_table[lookup_byte & 0x07] |
+                                   overflow_add_table[lookup_byte >> 4] | sz53_table[z80.r8.a];
+                        z80.q = z80.r8.f;
                         break;
-                    case 0x88:
+                    }
+                    case 0x88: {
                         // ADC A,(r)
+                        uint16_t tmp = (uint16_t)z80.r8.a + *r + ((uint16_t)z80.r8.f & FLAG_C);
+                        uint8_t lookup_byte = (((uint16_t)z80.r8.a & 0x88) >> 3) | ((*r & 0x88) >> 2) | (((uint16_t)tmp & 0x88) >> 1);
+                        z80.r8.a = tmp;
+                        z80.r8.f = (((tmp & 0x100) != 0) ? FLAG_C : 0) | halfcarry_add_table[lookup_byte & 0x07] |
+                                   overflow_add_table[lookup_byte >> 4] | sz53_table[z80.r8.a];
+                        z80.q = z80.r8.f;
                         break;
-                    case 0x98:
+                    }
+                    case 0x90: {
+                        // SUB A,(r)
+                        uint16_t tmp = (uint16_t)z80.r8.a - *r;
+                        uint8_t lookup_byte = ((z80.r8.a & 0x88) >> 3) | ((*r & 0x88) >> 2) | (uint8_t)((tmp & 0x88) >> 1);
+                        z80.r8.a = tmp;
+                        z80.r8.f = (((tmp & 0x100) != 0) ? FLAG_C : 0) | FLAG_N | halfcarry_sub_table[lookup_byte & 0x07] |
+                                   overflow_sub_table[lookup_byte >> 4] | sz53_table[z80.r8.a];
+                        z80.q = z80.r8.f;
+                        break;
+                    }
+                    case 0x98: {
                         // SBC A,(r)
+                        uint16_t tmp  = (uint16_t)z80.r8.a - *r - ((uint16_t)z80.r8.f & FLAG_C);
+                        uint8_t lookup_byte = ((z80.r8.a & 0x88) >> 3) | ((*r & 0x88) >> 2) | (uint8_t)((tmp & 0x88) >> 1);
+                        z80.r8.a = tmp;
+                        z80.r8.f = (((tmp & 0x100) != 0) ? FLAG_C : 0) | FLAG_N | halfcarry_sub_table[lookup_byte & 0x07] |
+                                   overflow_sub_table[lookup_byte >> 4] | sz53_table[z80.r8.a];
+                        z80.q = z80.r8.f;
                         break;
+                    }
                     case 0xa0:
                         // AND A,(r)
+                        z80.r8.a &= *r;
+                        z80.r8.f = FLAG_H | sz53p_table[z80.r8.a];
+                        z80.q = z80.r8.f;
                         break;
                     case 0xa8:
                         // XOR A,(r)
+                        z80.r8.a ^= *r;
+                        z80.r8.f = sz53p_table[z80.r8.a];
+                        z80.q = z80.r8.f;
                         break;
                     case 0xb0:
                         // OR A,(r)
+                        z80.r8.a |= *r;
+                        z80.r8.f = sz53p_table[z80.r8.a];
+                        z80.q = z80.r8.f;
                         break;
-                    case 0xb8:
+                    case 0xb8: {
                         // CP (r)
+                        uint16_t tmp = (uint16_t)z80.r8.a - *r;
+                        uint8_t lookup_byte = ((z80.r8.a & 0x88) >> 3) | ((*r & 0x88) >> 2) | (uint8_t)((tmp & 0x88) >> 1);
+                        z80.r8.f = (((tmp & 0x100) != 0) ? FLAG_C : ((tmp != 0) ? 0 : FLAG_Z)) | FLAG_N | halfcarry_sub_table[lookup_byte & 0x07] |
+                                   overflow_sub_table[lookup_byte >> 4] | (*r & (FLAG_3 | FLAG_5)) | (uint8_t)(tmp & FLAG_S);
+                        z80.q = z80.r8.f;
                         break;
+                    }
                 }
             }
 
