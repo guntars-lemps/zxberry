@@ -110,12 +110,10 @@ void z80_interrupt()
 
 }
 
-uint8_t load_byte()
+void load_byte(uint8_t *r8)
 {
-    uint8_t tmp_byte = z80.mr(z80.pc);
-    z80.pc++;
+    *r8 = z80.mr(z80.pc++);
     z80.states += 4; // is it correct ?
-    return tmp_byte;
 }
 
 
@@ -124,6 +122,20 @@ void load_word(uint16_t *r16)
     *r16 = z80.mr(z80.pc) | (z80.mr(z80.pc + 1) << 8);
     z80.pc += 2;
     z80.states += 8; // is it correct ?
+}
+
+
+void push(uint16_t r16)
+{
+    z80.mw(z80.sp--, (r16 >> 8) & 0xff);
+    z80.mw(z80.sp--, r16 & 0xff);
+}
+
+
+void pop(uint16_t *r16)
+{
+    *r16 = z80.mr(z80.sp + 1) | (z80.mr(z80.sp + 2) << 8);
+    z80.sp += 2;
 }
 
 
@@ -141,11 +153,22 @@ void add_r16_word(uint16_t *r16, uint16_t word)
 
 void jr()
 {
-    int8_t jrtemp = z80.mr(z80.pc);
-    z80.pc ++;
+    int8_t jrtemp = z80.mr(z80.pc++);
     z80.states += 5;
     z80.pc += jrtemp;
     z80.memptr = z80.pc + 1;
+}
+
+
+ void jp(bool cond)
+ {
+    uint16_t tmp = z80.mr(z80.pc+1)  | (z80.mr(z80.pc+2) << 8);
+    z80.pc += 2;
+    if (cond) {
+        z80.pc = tmp;
+        // states ...
+    }
+    z80.memptr = tmp;
 }
 
 
@@ -686,7 +709,8 @@ void z80_opcocde()
                             break;
                         case 0x06: {
                             // LD (r),nn
-                            uint8_t tmp = load_byte();
+                            uint8_t tmp;
+                            load_byte(&tmp);
                             z80.q = 0;
                             store_operand((command >> 3) & 0x07, tmp);
                             break;
@@ -736,7 +760,7 @@ void z80_opcocde()
                             break;
                         case 0x0a:
                             // LD A,(BC)
-                            z80.r8.a = load_byte(z80.r16.bc);
+                            z80.r8.a = z80.mr(z80.r16.bc);
                             z80.memptr = z80.r16.bc + 1;
                             z80.q = 0;
                             break;
@@ -800,7 +824,7 @@ void z80_opcocde()
                             break;
                         case 0x1a:
                             // LD A,(DE)
-                            z80.r8.a = load_byte(z80.r16.de);
+                            z80.r8.a = z80.mr(z80.r16.de);
                             z80.memptr = z80.r16.de + 1;
                             z80.q = 0;
                             break;
@@ -1074,20 +1098,30 @@ void z80_opcocde()
                         // CALL (FLAG),nnnn
                         break;
                     case 0x07: {
-                        uint16_t address = (command & 0x38);
                         // RST (address)
+                        uint16_t tmp = (command & 0x38);
+                        push(z80.pc);
+                        z80.pc = tmp;
+                        z80.memptr = z80.pc;
+                        z80.q = 0;
                         break;
                     }
                 }
                 switch (command) {
                     case 0xc1:
                         // POP BC
+                        pop(&z80.r16.bc);
+                        z80.q = 0;
                         break;
                     case 0xc3:
                         // JP nnnn
+                        jp(true);
+                        z80.q = 0;
                         break;
                     case 0xc5:
                         // PUSH BC
+                        push(z80.r16.bc);
+                        z80.q = 0;
                         break;
                     case 0xc6:
                         // ADD A,nn
@@ -1107,12 +1141,16 @@ void z80_opcocde()
                         break;
                     case 0xd1:
                         // POP DE
+                        pop(&z80.r16.de);
+                        z80.q = 0;
                         break;
                     case 0xd3:
                         // OUT (nn),A
                         break;
                     case 0xd5:
                         // PUSH DE
+                        push(z80.r16.de);
+                        z80.q = 0;
                         break;
                     case 0xd6:
                         // SUB nn
@@ -1132,12 +1170,16 @@ void z80_opcocde()
                         break;
                     case 0xe1:
                         // POP HL // if shifted then IX / IY
+                        pop((z80.shifts & DD_SHIFT) ? &z80.r16.ix : ((z80.shifts & FD_SHIFT) ? &z80.r16.iy : &z80.r16.hl));
+                        z80.q = 0;
                         break;
                     case 0xe3:
                         // EX (SP),HL // if shifted then IX / IY
                         break;
                     case 0xe5:
                         // PUSH HL // if shifted then IX / IY
+                        push((z80.shifts & DD_SHIFT) ? z80.r16.ix : ((z80.shifts & FD_SHIFT) ? z80.r16.iy : z80.r16.hl));
+                        z80.q = 0;
                         break;
                     case 0xe6:
                         // AND nn
@@ -1157,12 +1199,16 @@ void z80_opcocde()
                         break;
                     case 0xf1:
                         // POP AF
+                        pop(&z80.r16.af);
+                        z80.q = 0;
                         break;
                     case 0xf3:
                         // DI
                         break;
                     case 0xf5:
                         // PUSH AF
+                        push(z80.r16.af);
+                        z80.q = 0;
                         break;
                     case 0xf6:
                         // OR nn
