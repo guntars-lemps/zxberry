@@ -106,11 +106,53 @@ void z80_reset()
 }
 
 
+void push(uint16_t r16)
+{
+    z80.mw(z80.sp--, (r16 >> 8) & 0xff);
+    z80.mw(z80.sp--, r16 & 0xff);
+}
+
+
+void pop(uint16_t *r16)
+{
+    *r16 = z80.mr(z80.sp + 1) | (z80.mr(z80.sp + 2) << 8);
+    z80.sp += 2;
+}
+
+
 void z80_interrupt()
 {
+    if (z80.iff1)  {
+        if (z80.halted) {
+            z80.pc++;
+            z80.halted = false;
+        }
 
+        z80.states += 7;
 
+        z80.r = (z80.r + 1) & 0x7f;
+        z80.iff1 = z80.iff2 = 0;
+
+        // push PC
+        push(z80.pc);
+
+        switch (z80.im) {
+            case IM0:
+            case IM1:
+                z80.pc = 0x0038;
+                break;
+
+            case IM2: {
+                uint16_t tmp = ((uint16_t)z80.i << 8) | 0xff;
+                z80.pc = z80.mr(tmp) | (z80.mr(tmp + 1) << 8);
+                break;
+            }
+        }
+        z80.memptr = z80.pc;
+        z80.q = 0;
+    }
 }
+
 
 void load_byte(uint8_t *r8)
 {
@@ -124,20 +166,6 @@ void load_word(uint16_t *r16)
     *r16 = z80.mr(z80.pc) | (z80.mr(z80.pc + 1) << 8);
     z80.pc += 2;
     z80.states += 8; // is it correct ?
-}
-
-
-void push(uint16_t r16)
-{
-    z80.mw(z80.sp--, (r16 >> 8) & 0xff);
-    z80.mw(z80.sp--, r16 & 0xff);
-}
-
-
-void pop(uint16_t *r16)
-{
-    *r16 = z80.mr(z80.sp + 1) | (z80.mr(z80.sp + 2) << 8);
-    z80.sp += 2;
 }
 
 
@@ -939,7 +967,7 @@ void z80_opcocde()
                             z80.mw(tmp, (z80.shifts & DD_SHIFT) ? z80.r8.ixl : ((z80.shifts & FD_SHIFT) ? z80.r8.iyl : z80.r8.l));
                             tmp++;
                             z80.mw(tmp, (z80.shifts & DD_SHIFT) ? z80.r8.ixh : ((z80.shifts & FD_SHIFT) ? z80.r8.iyh : z80.r8.h));
-                            z80.memptr = tmp; // ++ ??????????????????????????
+                            z80.memptr = tmp; // nnnn + 1
                             z80.q = 0;
                             break;
                         }
@@ -1076,8 +1104,8 @@ void z80_opcocde()
             case 0x40:
 
                 if (command == 0x76) {
-                    // HALT
-                    //.......................................................................!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                    z80.halted = true;
+                    z80.pc--;
                 } else {
                     // LD (r),(r)
                     uint8_t *r = load_operand(command & 0x07, &tmp_byte_address, &tmp_byte);
@@ -1207,10 +1235,15 @@ void z80_opcocde()
                         pop(&z80.r16.de);
                         z80.q = 0;
                         break;
-                    case 0xd3:
+                    case 0xd3: {
                         // OUT (nn),A
-               //////////////////        qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
+                        uint8_t port = z80.mr(z80.pc++);
+                        uint16_t port_r16 = (uint16_t)(z80.r8.a << 8) | port;
+                        z80.memptr =  (uint16_t)(z80.r8.a << 8) | ((port + 1) & 0xff);
+                        z80.pw(port_r16, z80.r8.a);
+                        z80.q = 0;
                         break;
+                    }
                     case 0xd5:
                         // PUSH DE
                         push(z80.r16.de);
@@ -1237,10 +1270,14 @@ void z80_opcocde()
                         z80.q = 0;
                         break;
                     }
-                    case 0xdb:
+                    case 0xdb: {
                         // IN A,(nn)
-            //////////////////        qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
+                        uint16_t tmp = ((uint16_t)z80.r8.a << 8) | z80.mr(z80.pc++);
+                        z80.r8.a = z80.pr(tmp++);
+                        z80.memptr = tmp;
+                        z80.q = 0;
                         break;
+                    }
                     case 0xdd:
                         // shift DD
                         z80.shifts |= DD_SHIFT;
@@ -1310,7 +1347,8 @@ void z80_opcocde()
                         break;
                     case 0xf3:
                         // DI
-     //////////////////        qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
+                        z80.iff1 = z80.iff2 = 0;
+                        z80.q = 0;
                         break;
                     case 0xf5:
                         // PUSH AF
@@ -1332,8 +1370,9 @@ void z80_opcocde()
                         break;
                     case 0xfb:
                         // EI
-        //////////////////        qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
+                        z80.iff1 = z80.iff2 = 1;
                         z80.shifts |= DISINT_SHIFT;
+                        z80.q = 0;
                         return; // !!!
                     case 0xfd:
                         z80.shifts |= FD_SHIFT;
