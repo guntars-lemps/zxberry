@@ -235,6 +235,18 @@ void add_r16_word(uint16_t *r16, uint16_t word)
 }
 
 
+void sbc_hl(uint16_t *r16)
+{
+    uint32_t tmp = (uint32_t)z80.r16.hl - (uint32_t)*r16 - (uint32_t)(z80.F & FLAG_C);
+    uint8_t lookup_byte = ((z80.r16.hl & 0x8800) >> 11) | ((r16 & 0x8800) >> 10) | ((tmp & 0x8800) >> 9);
+    z80.memptr = z80.r16.hl + 1;
+    z80.r16.hl = tmp;
+    z80.r8.f = (((tmp & 0x10000) != 0) ? FLAG_C : 0) | FLAG_N | overflow_sub_table[lookup_byte >> 4] | (z80.r8.h & (FLAG_3 | FLAG_5 | FLAG_S)) |
+               halfcarry_sub_table[lookup_byte & 0x07] | (z80.r16.hl ? 0 : FLAG_Z);
+    z80.q = z80.r8.f;
+}
+
+
 void jr()
 {
     int8_t jrtemp = z80.mr(z80.pc++);
@@ -606,132 +618,271 @@ void z80_opcocde()
         switch (command) {
             case 0x40:
                 // IN B,(C)
+                z80.memptr = z80.r16.bc + 1;
+                z80.r8.b = z80.pr(z80.r16.bc);
+                z80.r8.f = (z80.r8.f & FLAG_C) | sz53p_table[z80.r8.b];
+                z80.q = z80.r8.f;
                 break;
             case 0x41:
                 // OUT (C),B
+                z80.pw(z80.r16.bc, z80.r8.b);
+                z80.memptr = z80.r16.bc + 1;
+                z80.q = 0;
                 break;
             case 0x42:
                 // SBC HL,BC
+                sbc_hl(&z80.r16.bc);
                 break;
             case 0x43:
                 // LD (nnnn),BC
+                load_word(&z80.memptr);
+                z80.mw(z80.memptr++, z80.r8.c);
+                z80.mw(z80.memptr, z80.r8.b);
+                z80.q = 0;
                 break;
             case 0x7c:
                 // NEG
+                uint8_t tmp := z80.r8.a;
+                z80.r8.a = 0;
+                z80.sub(tmp);
                 break;
             case 0x7d:
                 // RETN
+                z80.iff1 = z80.iff2;
+                z80.ret(true);
                 break;
             case 0x6e:
                 // IM 0
+                z80.im = IM0;
+                z80.q = 0;
                 break;
             case 0x47:
                 // LD I,A
+                z80.i = z80.r8.a;
+                z80.q = 0;
                 break;
             case 0x48:
                 // IN C,(C)
+                z80.memptr = z80.r16.bc + 1;
+                z80.r8.c = z80.pr(z80.r16.bc);
+                z80.r8.f = (z80.r8.f & FLAG_C) | sz53p_table[z80.r8.c];
+                z80.q = z80.r8.f;
                 break;
             case 0x49:
                 // OUT (C),C
+                z80.pw(z80.r16.bc, z80.r8.c);
+                z80.memptr = z80.r16.bc + 1;
+                z80.q = 0;
                 break;
             case 0x4a:
                 // ADC HL,BC
+                adc_hl(&z80.r16.bc);
                 break;
             case 0x4b:
                 // LD BC,(nnnn)
+                load_word(&z80.memptr);
+                z80.r8.c = z80.mr(z80.memptr++);
+                z80.r8.b = z80.mr(z80.memptr);
+                z80.q = 0;
                 break;
             case 0x4f:
                 // LD R,A
+
+            //////////////////////// R7 ?????????????????????????????????????????????????????????/
+               ///// z80.r  = uint16(z80.A),  uint 16 ??????????????????????????????????????????????????????????????????????
+               ////////////////////////z80.r7 = z80.r8.a;
+               z80.q = 0;
                 break;
             case 0x50:
                 // IN D,(C)
+                z80.memptr = z80.r16.bc + 1;
+                z80.r8.d = z80.pr(z80.r16.bc);
+                z80.r8.f = (z80.r8.f & FLAG_C) | sz53p_table[z80.r8.d];
+                z80.q = z80.r8.f;
                 break;
             case 0x51:
                 // OUT (C),D
+                z80.pw(z80.r16.bc, z80.r8.d);
+                z80.memptr = z80.r16.bc + 1;
+                z80.q = 0;
                 break;
             case 0x52:
                 // SBC HL,DE
+                sbc_hl(&z80.r16.de);
                 break;
             case 0x53:
                 // LD (nnnn),DE
+                load_word(&z80.memptr);
+                z80.mw(z80.memptr++, z80.r8.e);
+                z80.mw(z80.memptr, z80.r8.d);
+                z80.q = 0;
                 break;
             case 0x76:
                 // IM 1
+                z80.im = IM1;
+                z80.q = 0;
                 break;
             case 0x57:
                 // LD A,I
+                z80.r8.a = z80.i;
+                z80.r8.f = (z80.r8.f & FLAG_C) | sz53_table[z80.r8.a] | ((z80.IFF2 != IM0) ? FLAG_V : 0);
+                z80.q = z80.r8.f;
                 break;
             case 0x58:
                 // IN E,(C)
+                z80.memptr = z80.r16.bc + 1;
+                z80.r8.e = z80.pr(z80.r16.bc);
+                z80.r8.f = (z80.r8.f & FLAG_C) | sz53p_table[z80.r8.e];
+                z80.q = z80.r8.f;
                 break;
             case 0x59:
                 // OUT (C),E
+                z80.pw(z80.r16.bc, z80.r8.e);
+                z80.memptr = z80.r16.bc + 1;
+                z80.q = 0;
                 break;
             case 0x5a:
                 // ADC HL,DE
+                adc_hl(&z80.r16.de);
                 break;
             case 0x5b:
                 // LD DE,(nnnn)
+                load_word(&z80.memptr);
+                z80.r8.e = z80.mr(z80.memptr++);
+                z80.r8.d = z80.mr(z80.memptr);
+                z80.q = 0;
                 break;
             case 0x7e:
                 // IM 2
+                z80.im = IM2;
+                z80.q = 0;
                 break;
             case 0x5f:
                 // LD A,R
+//////////////////////                z80.r8.a = byte(z80.r & 0x7f) | (z80.R7 & 0x80); // r7 ???? ?????????????????????????????????????
+                z80.r8.f = (z80.r8.f & FLAG_C) | sz53_table[z80.r8.a] | ((z80.IFF2 != IM0) ? FLAG_V : 0);
+                z80.q = z80.r8.f;
                 break;
             case 0x60:
                 // IN H,(C)
+                z80.memptr = z80.r16.bc + 1;
+                z80.r8.h = z80.pr(z80.r16.bc);
+                z80.r8.f = (z80.r8.f & FLAG_C) | sz53p_table[z80.r8.h];
+                z80.q = z80.r8.f;
                 break;
             case 0x61:
                 // OUT (C),H
+                z80.pw(z80.r16.bc, z80.r8.h);
+                z80.memptr = z80.r16.bc + 1;
+                z80.q = 0;
                 break;
             case 0x62:
                 // SBC HL,HL
+                sbc_hl(&z80.r16.hl);
                 break;
             case 0x63:
                 // LD (nnnn),HL
+                load_word(&z80.memptr);
+                z80.mw(z80.memptr++, z80.r8.l);
+                z80.mw(z80.memptr, z80.r8.h);
+                z80.q = 0;
                 break;
             case 0x67:
                 // RRD
+
+                var bytetemp byte = z80.mRead(z80.HL())
+    z80.addTstates(4)
+    z80.mWrite(z80.HL(), (z80.A<<4)|(bytetemp>>4))
+    z80.A = (z80.A & 0xf0) | (bytetemp & 0x0f)
+    z80.F = (z80.F & FLAG_C) | sz53pTable[z80.A]
+    z80.Q = z80.F
+    z80.memptr = z80.HL() + 1
+
+
+
                 break;
             case 0x68:
                 // IN L,(C)
+                z80.memptr = z80.r16.bc + 1;
+                z80.r8.l = z80.pr(z80.r16.bc);
+                z80.r8.f = (z80.r8.f & FLAG_C) | sz53p_table[z80.r8.l];
+                z80.q = z80.r8.f;
                 break;
             case 0x69:
                 // OUT (C),L
+                z80.pw(z80.r16.bc, z80.r8.l);
+                z80.memptr = z80.r16.bc + 1;
+                z80.q = 0;
                 break;
             case 0x6a:
                 // ADC HL,HL
+                adc_hl(&z80.r16.hl);
                 break;
             case 0x6b:
                 // LD HL,(nnnn)
+                load_word(&z80.memptr);
+                z80.r8.l = z80.mr(z80.memptr++);
+                z80.r8.h = z80.mr(z80.memptr);
+                z80.q = 0;
                 break;
             case 0x6f:
                 // RLD
+
+                var bytetemp byte = z80.mRead(z80.HL())
+    z80.addTstates(4)
+    z80.mWrite(z80.HL(), (bytetemp<<4)|(z80.A&0x0f))
+    z80.A = (z80.A & 0xf0) | (bytetemp >> 4)
+    z80.F = (z80.F & FLAG_C) | sz53pTable[z80.A]
+    z80.Q = z80.F
+    z80.memptr = z80.HL() + 1
+
+
+
                 break;
             case 0x70:
                 // IN F,(C)
+                z80.memptr = z80.r16.bc + 1;
+                uint8_t tmp = z80.pr(z80.r16.bc);
+                z80.r8.f = (z80.r8.f & FLAG_C) | sz53p_table[tmp];
+                z80.q = z80.r8.f;
                 break;
             case 0x71:
                 // OUT (C),0
+                z80.pw(z80.r16.bc, 0);
+                z80.memptr = z80.r16.bc + 1;
+                z80.q = 0;
+                break;
                 break;
             case 0x72:
                 // SBC HL,SP
+                sbc_hl(&z80.sp);
                 break;
             case 0x73:
                 // LD (nnnn),SP
+                load_word(&z80.memptr);
+                z80.mw(z80.memptr++, z80.sp);
+                z80.mw(z80.memptr, (z80.sp >> 8));
+                z80.q = 0;
                 break;
             case 0x78:
                 // IN A,(C)
+                z80.memptr = z80.r16.bc + 1;
+                z80.r8.a = z80.pr(z80.r16.bc);
+                z80.r8.f = (z80.r8.f & FLAG_C) | sz53p_table[z80.r8.a];
+                z80.q = z80.r8.f;
                 break;
             case 0x79:
                 // OUT (C),A
                 break;
             case 0x7a:
                 // ADC HL,SP
+                adc_hl(&z80.sp);
                 break;
             case 0x7b:
                 // LD SP,(nnnn)
+                load_word(&z80.memptr);
+                z80.sp = (uint16_t)z80.mr(z80.memptr) | (uint16_t)(z80.mr(z80.memptr + 1) << 8);
+                z80.q = 0;
                 break;
             case 0xa0:
                 // LDI
