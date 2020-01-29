@@ -32,7 +32,7 @@ enum t_interrupt_mode {IM0, IM1, IM2};
 typedef struct
 {
     uint16_t pc, sp, memptr;
-    uint8_t i, r, q;
+    uint8_t i, r, r7, q;
     uint8_t iff1, iff2;
     enum t_interrupt_mode im;
     bool halted;

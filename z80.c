@@ -89,7 +89,7 @@ void z80_init(t_memory_reader mr, t_memory_writer mw, t_port_reader pr, t_port_w
 void z80_reset()
 {
     z80.r16.af = z80.r16.af_ = 0xffff;
-    z80.i = z80.r = 0;
+    z80.i = z80.r = z80.r7 = 0;
     z80.pc = 0;
     z80.sp = 0xffff;
     z80.iff1 = z80.iff2 = 0;
@@ -234,11 +234,25 @@ void add_r16_word(uint16_t *r16, uint16_t word)
     z80.q = z80.r8.f;
 }
 
+void adc_hl_word(uint16_t word)
+{
+    uint32_t tmp = z80.r16.hl + word;
+    uint8_t lookup_byte = (uint8_t)(((z80.r16.hl & 0x0800) >> 11) | ((word & 0x0800) >> 10) | (tmp & 0x0800) >> 9);
+    z80.memptr = z80.r16.hl + 1;
+    z80.r16.hl = (uint16_t)(tmp);
+    z80.r8.f = overflow_add_table[lookup_byte >> 4] |
+               (((tmp & 0x10000) != 0) ? FLAG_C : 0) |
+               (z80.r8.h & (FLAG_3 | FLAG_5 | FLAG_S)) |
+               halfcarry_add_table[lookup_byte & 0x07] |
+               (z80.r16.hl ? 0 : FLAG_Z);
+    z80.q = z80.r8.f;
+}
+
 
 void sbc_hl(uint16_t *r16)
 {
-    uint32_t tmp = (uint32_t)z80.r16.hl - (uint32_t)*r16 - (uint32_t)(z80.F & FLAG_C);
-    uint8_t lookup_byte = ((z80.r16.hl & 0x8800) >> 11) | ((r16 & 0x8800) >> 10) | ((tmp & 0x8800) >> 9);
+    uint32_t tmp = (uint32_t)z80.r16.hl - (uint32_t)*r16 - (uint32_t)(z80.r8.f & FLAG_C);
+    uint8_t lookup_byte = ((z80.r16.hl & 0x8800) >> 11) | ((*r16 & 0x8800) >> 10) | ((tmp & 0x8800) >> 9);
     z80.memptr = z80.r16.hl + 1;
     z80.r16.hl = tmp;
     z80.r8.f = (((tmp & 0x10000) != 0) ? FLAG_C : 0) | FLAG_N | overflow_sub_table[lookup_byte >> 4] | (z80.r8.h & (FLAG_3 | FLAG_5 | FLAG_S)) |
@@ -640,16 +654,17 @@ void z80_opcocde()
                 z80.mw(z80.memptr, z80.r8.b);
                 z80.q = 0;
                 break;
-            case 0x7c:
+            case 0x7c: {
                 // NEG
-                uint8_t tmp := z80.r8.a;
+                uint8_t tmp = z80.r8.a;
                 z80.r8.a = 0;
-                z80.sub(tmp);
+                sub_a(tmp);
                 break;
+            }
             case 0x7d:
                 // RETN
                 z80.iff1 = z80.iff2;
-                z80.ret(true);
+                ret(true);
                 break;
             case 0x6e:
                 // IM 0
@@ -676,7 +691,7 @@ void z80_opcocde()
                 break;
             case 0x4a:
                 // ADC HL,BC
-                adc_hl(&z80.r16.bc);
+                adc_hl_word(z80.r16.bc);
                 break;
             case 0x4b:
                 // LD BC,(nnnn)
@@ -687,11 +702,8 @@ void z80_opcocde()
                 break;
             case 0x4f:
                 // LD R,A
-
-            //////////////////////// R7 ?????????????????????????????????????????????????????????/
-               ///// z80.r  = uint16(z80.A),  uint 16 ??????????????????????????????????????????????????????????????????????
-               ////////////////////////z80.r7 = z80.r8.a;
-               z80.q = 0;
+                z80.r = z80.r7 = z80.r8.a;
+                z80.q = 0;
                 break;
             case 0x50:
                 // IN D,(C)
@@ -725,7 +737,7 @@ void z80_opcocde()
             case 0x57:
                 // LD A,I
                 z80.r8.a = z80.i;
-                z80.r8.f = (z80.r8.f & FLAG_C) | sz53_table[z80.r8.a] | ((z80.IFF2 != IM0) ? FLAG_V : 0);
+                z80.r8.f = (z80.r8.f & FLAG_C) | sz53_table[z80.r8.a] | ((z80.iff2 != IM0) ? FLAG_P : 0);
                 z80.q = z80.r8.f;
                 break;
             case 0x58:
@@ -743,7 +755,7 @@ void z80_opcocde()
                 break;
             case 0x5a:
                 // ADC HL,DE
-                adc_hl(&z80.r16.de);
+                adc_hl_word(z80.r16.de);
                 break;
             case 0x5b:
                 // LD DE,(nnnn)
@@ -759,8 +771,8 @@ void z80_opcocde()
                 break;
             case 0x5f:
                 // LD A,R
-//////////////////////                z80.r8.a = byte(z80.r & 0x7f) | (z80.R7 & 0x80); // r7 ???? ?????????????????????????????????????
-                z80.r8.f = (z80.r8.f & FLAG_C) | sz53_table[z80.r8.a] | ((z80.IFF2 != IM0) ? FLAG_V : 0);
+                z80.r8.a = (z80.r & 0x7f) | (z80.r7 & 0x80);
+                z80.r8.f = (z80.r8.f & FLAG_C) | sz53_table[z80.r8.a] | ((z80.iff2 != IM0) ? FLAG_P : 0);
                 z80.q = z80.r8.f;
                 break;
             case 0x60:
@@ -787,20 +799,16 @@ void z80_opcocde()
                 z80.mw(z80.memptr, z80.r8.h);
                 z80.q = 0;
                 break;
-            case 0x67:
+            case 0x67: {
                 // RRD
-
-                var bytetemp byte = z80.mRead(z80.HL())
-    z80.addTstates(4)
-    z80.mWrite(z80.HL(), (z80.A<<4)|(bytetemp>>4))
-    z80.A = (z80.A & 0xf0) | (bytetemp & 0x0f)
-    z80.F = (z80.F & FLAG_C) | sz53pTable[z80.A]
-    z80.Q = z80.F
-    z80.memptr = z80.HL() + 1
-
-
-
+                uint8_t tmp = z80.mr(z80.r16.hl);
+                z80.mw(z80.r16.hl, (z80.r8.a << 4) | (tmp >> 4));
+                z80.r8.a = (z80.r8.a & 0xf0) | (tmp & 0x0f);
+                z80.r8.f = (z80.r8.f & FLAG_C) | sz53p_table[z80.r8.a];
+                z80.memptr = z80.r16.hl + 1;
+                z80.q = z80.r8.f;
                 break;
+            }
             case 0x68:
                 // IN L,(C)
                 z80.memptr = z80.r16.bc + 1;
@@ -816,7 +824,7 @@ void z80_opcocde()
                 break;
             case 0x6a:
                 // ADC HL,HL
-                adc_hl(&z80.r16.hl);
+                adc_hl_word(z80.r16.hl);
                 break;
             case 0x6b:
                 // LD HL,(nnnn)
@@ -825,20 +833,16 @@ void z80_opcocde()
                 z80.r8.h = z80.mr(z80.memptr);
                 z80.q = 0;
                 break;
-            case 0x6f:
+            case 0x6f: {
                 // RLD
-
-                var bytetemp byte = z80.mRead(z80.HL())
-    z80.addTstates(4)
-    z80.mWrite(z80.HL(), (bytetemp<<4)|(z80.A&0x0f))
-    z80.A = (z80.A & 0xf0) | (bytetemp >> 4)
-    z80.F = (z80.F & FLAG_C) | sz53pTable[z80.A]
-    z80.Q = z80.F
-    z80.memptr = z80.HL() + 1
-
-
-
+                uint8_t tmp = z80.mr(z80.r16.hl);
+                z80.mw(z80.r16.hl, (tmp << 4) | (z80.r8.a & 0x0f));
+                z80.r8.a = (z80.r8.a & 0xf0) | (tmp >> 4);
+                z80.r8.f = (z80.r8.f & FLAG_C) | sz53p_table[z80.r8.a];
+                z80.memptr = z80.r16.hl + 1;
+                z80.q = z80.r8.f;
                 break;
+            }
             case 0x70:
                 // IN F,(C)
                 z80.memptr = z80.r16.bc + 1;
@@ -851,7 +855,6 @@ void z80_opcocde()
                 z80.pw(z80.r16.bc, 0);
                 z80.memptr = z80.r16.bc + 1;
                 z80.q = 0;
-                break;
                 break;
             case 0x72:
                 // SBC HL,SP
@@ -876,7 +879,7 @@ void z80_opcocde()
                 break;
             case 0x7a:
                 // ADC HL,SP
-                adc_hl(&z80.sp);
+                adc_hl_word(z80.sp);
                 break;
             case 0x7b:
                 // LD SP,(nnnn)
@@ -884,54 +887,316 @@ void z80_opcocde()
                 z80.sp = (uint16_t)z80.mr(z80.memptr) | (uint16_t)(z80.mr(z80.memptr + 1) << 8);
                 z80.q = 0;
                 break;
-            case 0xa0:
+            case 0xa0: {
                 // LDI
+                uint8_t tmp = z80.mr(z80.r16.hl);
+                z80.r16.bc--;
+                z80.mw(z80.r16.de, tmp);
+                z80.r16.de++;
+                z80.r16.hl++;
+                tmp += z80.r8.a;
+                z80.r8.f = (z80.r8.f & (FLAG_C | FLAG_Z | FLAG_S)) |
+                           (z80.r16.bc ? FLAG_P : 0) |
+                           (tmp & FLAG_3) |
+                           ((tmp & 0x02) ? FLAG_5 : 0);
+                z80.q = z80.r8.f;
                 break;
-            case 0xa1:
+            }
+            case 0xa1: {
                 // CPI
+                uint8_t value = z80.mr(z80.r16.hl);
+                uint8_t tmp = z80.r8.a - value;
+                uint8_t lookup = ((z80.r8.a & 0x08) >> 3) | ((value & 0x08) >> 2) | ((tmp & 0x08) >> 1);
+                z80.r16.hl++;
+                z80.r16.bc--;
+                z80.r8.f = (z80.r8.f & FLAG_C) |
+                           (z80.r16.bc ? (FLAG_P | FLAG_N) : FLAG_N) |
+                           halfcarry_sub_table[lookup] |
+                           (tmp ? 0 : FLAG_Z) |
+                           (tmp & FLAG_S);
+                if (z80.r8.f & FLAG_H) {
+                    tmp--;
+                }
+                z80.r8.f |= (tmp & FLAG_3) | ((tmp & 0x02) ? FLAG_5 : 0);
+                z80.memptr++;
+                z80.q = z80.r8.f;
                 break;
-            case 0xa2:
+            }
+            case 0xa2: {
                 // INI
+                uint8_t tmp = z80.pr(z80.r16.bc);
+                z80.memptr = z80.r16.bc + 1;
+                z80.mw(z80.r16.hl, tmp);
+                z80.r16.bc--;
+                z80.r16.hl++;
+                z80.r8.f = ((tmp & 0x80) ? FLAG_N : 0) | sz53_table[z80.r8.b];
+                uint8_t kval = tmp + ((z80.r8.c + 1) & 0xff);
+                if ((tmp + ((z80.r8.c + 1) & 0xff)) > 0xff) {
+                    z80.r8.f |= (FLAG_C | FLAG_H);
+                }
+                z80.r8.f |= parity_table[((kval & 7) ^ z80.r8.b)];
+                z80.q = z80.r8.f;
                 break;
-            case 0xa3:
+            }
+            case 0xa3: {
                 // OUTI
+                uint8_t tmp = z80.mr(z80.r16.hl);
+                z80.r8.b--;
+                z80.memptr = z80.r16.bc + 1;
+                z80.pw(z80.r16.bc, tmp);
+                z80.r16.hl++;
+                z80.r8.f = ((tmp & 0x80) ? FLAG_N : 0) | sz53_table[z80.r8.b];
+                uint8_t kval = tmp + z80.r8.l;
+                if ((tmp + z80.r8.l) > 0xff) {
+                    z80.r8.f |= (FLAG_C | FLAG_H);
+                }
+                z80.r8.f |= parity_table[((kval & 7) ^ z80.r8.b)];
+                z80.q = z80.r8.f;
                 break;
-            case 0xa8:
+            }
+            case 0xa8: {
                 // LDD
+                uint8_t tmp = z80.mr(z80.r16.hl);
+                z80.r16.bc--;
+                z80.mw(z80.r16.de, tmp);
+                z80.r16.de--;
+                z80.r16.hl--;
+                tmp += z80.r8.a;
+                z80.r8.f = (z80.r8.f & (FLAG_C | FLAG_Z | FLAG_S)) |
+                           (z80.r16.bc ? FLAG_P : 0) |
+                           (tmp & FLAG_3) |
+                           ((tmp & 0x02) ? FLAG_5 : 0);
+                z80.q = z80.r8.f;
                 break;
-            case 0xa9:
+            }
+            case 0xa9: {
                 // CPD
+                uint8_t value = z80.mr(z80.r16.hl);
+                uint8_t tmp = z80.r8.a - value;
+                uint8_t lookup = ((z80.r8.a & 0x08) >> 3) | ((value & 0x08) >> 2) | ((tmp & 0x08) >> 1);
+                z80.r16.hl--;
+                z80.r16.bc--;
+                z80.r8.f = (z80.r8.f & FLAG_C) |
+                           (z80.r16.bc ? (FLAG_P | FLAG_N ) : FLAG_N) |
+                           halfcarry_sub_table[lookup] |
+                           (tmp ? 0 : FLAG_Z) |
+                           (tmp & FLAG_S);
+                if (z80.r8.f & FLAG_H) {
+                    tmp--;
+                }
+                z80.r8.f |= (tmp & FLAG_3) | ((tmp & 0x02) ? FLAG_5 : 0);
+                z80.memptr--;
+                z80.q = z80.r8.f;
                 break;
-            case 0xaa:
+            }
+            case 0xaa: {
                 // IND
+                uint8_t tmp = z80.pr(z80.r16.bc);
+                z80.memptr = z80.r16.bc - 1;
+                z80.mw(z80.r16.hl, tmp);
+                z80.r16.bc--;
+                z80.r16.hl--;
+                z80.r8.f = ((tmp & 0x80) ? FLAG_N : 0) | sz53_table[z80.r8.b];
+                uint8_t kval = tmp + ((z80.r8.c - 1) & 0xff);
+                if ((tmp + ((z80.r8.c - 1) & 0xff)) > 0xff) {
+                    z80.r8.f |= (FLAG_C | FLAG_H);
+                }
+                z80.r8.f |= parity_table[((kval & 7) ^ z80.r8.b)];
+                z80.q = z80.r8.f;
                 break;
-            case 0xab:
+            }
+            case 0xab: {
                 // OUTD
+                uint8_t tmp = z80.mr(z80.r16.hl);
+                z80.r8.b--;
+                z80.memptr = z80.r16.bc - 1;
+                z80.pw(z80.r16.bc, tmp);
+                z80.r16.hl--;
+                z80.r8.f = ((tmp & 0x80) ? FLAG_N : 0) | sz53_table[z80.r8.b];
+                uint8_t kval = tmp + z80.r8.l;
+                if ((tmp + z80.r8.l) > 0xff) {
+                    z80.r8.f |= (FLAG_C | FLAG_H);
+                }
+                z80.r8.f |= parity_table[((kval & 7) ^ z80.r8.b)];
+                z80.q = z80.r8.f;
                 break;
-            case 0xb0:
+            }
+            case 0xb0: {
                 // LDIR
+                uint8_t tmp = z80.mr(z80.r16.hl);
+                z80.mw(z80.r16.de, tmp);
+                z80.r16.hl++;
+                z80.r16.de++;
+                z80.r16.bc--;
+                tmp += z80.r8.a;
+                z80.r8.f = (z80.r8.f & (FLAG_C | FLAG_Z | FLAG_S)) |
+                           (z80.r16.bc ? FLAG_P : 0) |
+                           (tmp & FLAG_3) |
+                           ((tmp & 0x02) ? FLAG_5 : 0);
+                if (z80.r16.bc) {
+                    z80.pc -= 2;
+                    z80.memptr = z80.pc + 1;
+                } else {
+                    // states...
+                }
+                z80.q = z80.r8.f;
                 break;
-            case 0xb1:
+            }
+            case 0xb1: {
                 // CPIR
+                uint8_t value = z80.mr(z80.r16.hl);
+                uint8_t tmp = z80.r8.a - value;
+                uint8_t lookup = ((z80.r8.a & 0x08) >> 3) | ((value & 0x08) >> 2) | ((tmp & 0x08) >> 1);
+                z80.r16.hl++;
+                z80.r16.bc--;
+                z80.r8.f = (z80.r8.f & FLAG_C) |
+                           (z80.r16.bc ? (FLAG_P | FLAG_N) : FLAG_N) |
+                           halfcarry_sub_table[lookup] |
+                           (tmp ? 0 : FLAG_Z) |
+                           (tmp & FLAG_S);
+                if (z80.r8.f & FLAG_H) {
+                    tmp--;
+                }
+                z80.r8.f |= (tmp & FLAG_3) | ((tmp & 0x02) ? FLAG_5 : 0);
+                if ((z80.r8.f & (FLAG_P | FLAG_Z)) == FLAG_P) {
+                    z80.pc -= 2;
+                    z80.memptr = z80.pc + 1;
+                } else {
+                    z80.memptr++;
+                }
+                z80.q = z80.r8.f;
                 break;
-            case 0xb2:
+            }
+            case 0xb2: {
                 // INIR
+                uint8_t tmp = z80.pr(z80.r16.bc);
+                z80.mw(z80.r16.hl, tmp);
+                z80.memptr = z80.r16.bc + 1;
+                z80.r8.b--;
+                z80.r16.hl++;
+                z80.r8.f = ((tmp & 0x80) ? FLAG_N : 0) | sz53_table[z80.r8.b];
+                if (z80.r8.b) {
+                    z80.pc -= 2;
+                } else {
+                    // states
+                }
+                uint8_t kval = tmp + ((z80.r8.c + 1) & 0xff);
+                if ((tmp + ((z80.r8.c + 1) & 0xff)) > 0xff) {
+                    z80.r8.f |= (FLAG_C | FLAG_H);
+                }
+                z80.r8.f |= parity_table[((kval & 7) ^ z80.r8.b)];
+                z80.q = z80.r8.f;
                 break;
-            case 0xb3:
+            }
+            case 0xb3: {
                 // OTIR
+                uint8_t tmp = z80.mr(z80.r16.hl);
+                z80.r8.b--;
+                z80.memptr = z80.r16.bc + 1;
+                z80.pw(z80.r16.bc, tmp);
+                z80.r16.hl++;
+                z80.r8.f = ((tmp & 0x80) ? FLAG_N : 0) | sz53_table[z80.r8.b];
+                if (z80.r8.b) {
+                    z80.pc -= 2;
+                } else {
+                    // states
+                }
+                uint8_t kval = tmp + z80.r8.l;
+                if ((tmp + z80.r8.l) > 0xff) {
+                    z80.r8.f |= (FLAG_C | FLAG_H);
+                }
+                z80.r8.f |= parity_table[((kval & 7) ^ z80.r8.b)];
+                z80.q = z80.r8.f;
                 break;
-            case 0xb8:
+            }
+            case 0xb8: {
                 // LDDR
+                uint8_t tmp = z80.mr(z80.r16.hl);
+                z80.mw(z80.r16.de, tmp);
+                z80.r16.hl--;
+                z80.r16.de--;
+                z80.r16.bc--;
+                tmp += z80.r8.a;
+                z80.r8.f = (z80.r8.f & (FLAG_C | FLAG_Z | FLAG_S)) |
+                           (z80.r16.bc ? FLAG_P : 0) |
+                           (tmp & FLAG_3) |
+                           ((tmp & 0x02) ? FLAG_5 : 0);
+                if (z80.r16.bc) {
+                    z80.pc -= 2;
+                    z80.memptr = z80.pc + 1;
+                } else {
+                    // states...
+                }
+                z80.q = z80.r8.f;
                 break;
-            case 0xb9:
+            }
+            case 0xb9: {
                 // CPDR
+                uint8_t value = z80.mr(z80.r16.hl);
+                uint8_t tmp = z80.r8.a - value;
+                uint8_t lookup = ((z80.r8.a & 0x08) >> 3) | ((value & 0x08) >> 2) | ((tmp & 0x08) >> 1);
+                z80.r16.hl--;
+                z80.r16.bc--;
+                z80.r8.f = (z80.r8.f & FLAG_C) |
+                           (z80.r16.bc ? (FLAG_P | FLAG_N) : FLAG_N) |
+                           halfcarry_sub_table[lookup] |
+                           (tmp ? 0 : FLAG_Z) |
+                           (tmp & FLAG_S);
+                if (z80.r8.f & FLAG_H) {
+                    tmp--;
+                }
+                z80.r8.f |= (tmp & FLAG_3) | ((tmp & 0x02) ? FLAG_5 : 0);
+                if ((z80.r8.f & (FLAG_P | FLAG_Z)) == FLAG_P) {
+                    z80.pc -= 2;
+                    z80.memptr = z80.pc + 1;
+                } else {
+                    z80.memptr--;
+                }
+                z80.q = z80.r8.f;
                 break;
-            case 0xba:
+            }
+            case 0xba: {
                 // INDR
+                uint8_t tmp = z80.pr(z80.r16.bc);
+                z80.mw(z80.r16.hl, tmp);
+                z80.memptr = z80.r16.bc - 1;
+                z80.r8.b--;
+                z80.r16.hl--;
+                z80.r8.f = ((tmp & 0x80) ? FLAG_N : 0) | sz53_table[z80.r8.b];
+                if (z80.r8.b) {
+                    z80.pc -= 2;
+                } else {
+                    // states
+                }
+                uint8_t kval = tmp + ((z80.r8.c - 1) & 0xff);
+                if ((tmp + ((z80.r8.c - 1) & 0xff)) > 0xff) {
+                    z80.r8.f |= (FLAG_C | FLAG_H);
+                }
+                z80.r8.f |= parity_table[((kval & 7) ^ z80.r8.b)];
+                z80.q = z80.r8.f;
                 break;
-            case 0xbb:
+            }
+            case 0xbb: {
                 // OTDR
+                uint8_t tmp = z80.mr(z80.r16.hl);
+                z80.r8.b--;
+                z80.memptr = z80.r16.bc - 1;
+                z80.pw(z80.r16.bc, tmp);
+                z80.r16.hl--;
+                z80.r8.f = ((tmp & 0x80) ? FLAG_N : 0) | sz53_table[z80.r8.b];
+                if (z80.r8.b) {
+                    z80.pc -= 2;
+                } else {
+                    // states
+                }
+                uint8_t kval = tmp + z80.r8.l;
+                if ((tmp + z80.r8.l) > 0xff) {
+                    z80.r8.f |= (FLAG_C | FLAG_H);
+                }
+                z80.r8.f |= parity_table[((kval & 7) ^ z80.r8.b)];
+                z80.q = z80.r8.f;
                 break;
+            }
         }
         z80.shifts = 0;
         return;
