@@ -157,7 +157,14 @@ void z80_interrupt()
 void load_byte(uint8_t *r8)
 {
     *r8 = z80.mr(z80.pc++);
-    z80.states += 4; // is it correct ?
+    z80.states += 3;
+}
+
+
+void store_byte(uint16_t address, uint8_t byte)
+{
+    z80.wr(address, byte);
+    z80.states += 3;
 }
 
 
@@ -165,7 +172,7 @@ void load_word(uint16_t *r16)
 {
     *r16 = z80.mr(z80.pc) | (z80.mr(z80.pc + 1) << 8);
     z80.pc += 2;
-    z80.states += 8; // is it correct ?
+    z80.states += 6;
 }
 
 
@@ -320,7 +327,7 @@ uint8_t *load_operand(uint8_t n, uint16_t *tmp_byte_address, uint8_t *tmp_byte)
             case 0x06: {
                 int8_t offset = z80.mr(z80.pc);
                 z80.pc++;
-                z80.states += 4; // is it correct ?
+                z80.states += 3;
                 *tmp_byte = z80.mr(*tmp_byte_address = z80.r16.ix + offset);
                 return tmp_byte;
             }
@@ -345,7 +352,7 @@ uint8_t *load_operand(uint8_t n, uint16_t *tmp_byte_address, uint8_t *tmp_byte)
             case 0x06: {
                 int8_t offset = z80.mr(z80.pc);
                 z80.pc++;
-                z80.states += 4; // is it correct ?
+                z80.states += 3;
                 *tmp_byte = z80.mr(*tmp_byte_address = z80.r16.iy + offset);
                 return tmp_byte;
             }
@@ -368,6 +375,7 @@ uint8_t *load_operand(uint8_t n, uint16_t *tmp_byte_address, uint8_t *tmp_byte)
             return &z80.r8.l;
         case 0x06:
             *tmp_byte = z80.mr(*tmp_byte_address = z80.r16.hl);
+            z80.states += 3;
             return tmp_byte;
         case 0x07:
             return &z80.r8.a;
@@ -401,7 +409,7 @@ void store_operand(uint8_t n, uint8_t tmp_byte)
             case 0x06: {
                 int8_t offset = z80.mr(z80.pc);
                 z80.pc++;
-                z80.states += 4; // is it correct ?
+                z80.states += 3;
                 z80.mw(z80.r16.ix + offset, tmp_byte);
                 return;
             }
@@ -433,7 +441,7 @@ void store_operand(uint8_t n, uint8_t tmp_byte)
             case 0x06: {
                 int8_t offset = z80.mr(z80.pc);
                 z80.pc++;
-                z80.states += 4; // is it correct ?
+                z80.states += 3;
                 z80.mw(z80.r16.iy + offset, tmp_byte);
                 return;
             }
@@ -463,6 +471,7 @@ void store_operand(uint8_t n, uint8_t tmp_byte)
             return;
         case 0x06:
             z80.mw(z80.r16.hl, tmp_byte);
+            z80.states += 3;
             return;
         case 0x07:
             z80.r8.a = tmp_byte;
@@ -476,14 +485,14 @@ uint8_t *cb_load_operand(uint8_t n, uint16_t *tmp_byte_address, uint8_t *tmp_byt
     if (z80.shifts & DD_SHIFT) {
         int8_t offset = z80.mr(z80.pc);
         z80.pc++;
-        z80.states += 4; // is it correct ?
+        z80.states += 3;
         *tmp_byte = z80.mr(*tmp_byte_address = z80.r16.ix + offset);
         return tmp_byte;
     }
     if (z80.shifts & FD_SHIFT) {
         int8_t offset = z80.mr(z80.pc);
         z80.pc++;
-        z80.states += 4; // is it correct ?
+        z80.states += 3;
         *tmp_byte = z80.mr(*tmp_byte_address = z80.r16.iy + offset);
         return tmp_byte;
     }
@@ -501,6 +510,7 @@ uint8_t *cb_load_operand(uint8_t n, uint16_t *tmp_byte_address, uint8_t *tmp_byt
         case 0x05:
             return &z80.r8.l;
         case 0x06:
+            z80.states += 3;
             *tmp_byte = z80.mr(*tmp_byte_address = z80.r16.hl);
             return tmp_byte;
         case 0x07:
@@ -525,6 +535,8 @@ void z80_opcocde()
     uint8_t tmp_byte;
 
     command = z80.mr(z80.pc);
+
+    z80.states += 4;
 
     if (!z80.shifts && z80.irq /* && interrupts_enabled */) {
 
@@ -876,6 +888,9 @@ void z80_opcocde()
                 break;
             case 0x79:
                 // OUT (C),A
+                z80.pw(z80.r16.bc, z80.r8.a);
+                z80.memptr = z80.r16.bc + 1;
+                z80.q = 0;
                 break;
             case 0x7a:
                 // ADC HL,SP
@@ -1216,6 +1231,7 @@ void z80_opcocde()
                             z80.r8.f = (z80.r8.f & FLAG_C) | ((*r == 0x80) ? FLAG_P : 0) | (((*r & 0x0f) != 0) ? 0 : FLAG_H) | sz53_table[*r];
                             z80.q = z80.r8.f;
                             store_operand((command >> 3) & 0x07, *r);
+                            z80.states += (command == 0x34);
                             break;
                         case 0x05:
                             // DEC (r)
@@ -1225,6 +1241,7 @@ void z80_opcocde()
                             z80.r8.f |= ((*r == 0x7f) ? FLAG_P : 0) | sz53_table[*r];
                             z80.q = z80.r8.f;
                             store_operand((command >> 3) & 0x07, *r);
+                            z80.states += (command == 0x35);
                             break;
                         case 0x06: {
                             // LD (r),nn
@@ -1248,7 +1265,7 @@ void z80_opcocde()
                             break;
                         case 0x02:
                             // LD (BC),A
-                            z80.mw(z80.r16.bc, z80.r8.a);
+                            store_byte(z80.r16.bc, z80.r8.a);
                             z80.memptr = (z80.r16.af & 0xff00) | ((z80.r16.bc + 1) & 0x00ff);
                             z80.q = 0;
                             break;
@@ -1280,6 +1297,7 @@ void z80_opcocde()
                         case 0x0a:
                             // LD A,(BC)
                             z80.r8.a = z80.mr(z80.r16.bc);
+                            z80.states += 3;
                             z80.memptr = z80.r16.bc + 1;
                             z80.q = 0;
                             break;
@@ -1305,6 +1323,7 @@ void z80_opcocde()
                                 z80.pc++;
                                 z80.q = 0;
                             }
+                            z80.states += 4;
                             break;
                         case 0x11:
                             // LD DE,nnnn
@@ -1313,7 +1332,7 @@ void z80_opcocde()
                             break;
                         case 0x12:
                             // LD (DE),A
-                            z80.mw(z80.r16.de, z80.r8.a);
+                            store_byte(z80.r16.de, z80.r8.a);
                             z80.memptr = (z80.r16.af & 0xff00) | ((z80.r16.de + 1) & 0x00ff);
                             z80.q = 0;
                             break;
@@ -1335,6 +1354,7 @@ void z80_opcocde()
                             // JR offset
                             jr();
                             z80.q = 0;
+                            z80.states += 3;
                             break;
                         case 0x19:
                             // ADD HL,DE  // if shifted then IX / IY
@@ -1344,6 +1364,7 @@ void z80_opcocde()
                         case 0x1a:
                             // LD A,(DE)
                             z80.r8.a = z80.mr(z80.r16.de);
+                            z80.states += 3;
                             z80.memptr = z80.r16.de + 1;
                             z80.q = 0;
                             break;
@@ -1366,9 +1387,9 @@ void z80_opcocde()
                             if (!(z80.r8.f & FLAG_Z)) {
                                 jr();
                             } else {
-                                z80.states += 3;
                                 z80.pc++;
                             }
+                            z80.states += 3;
                             z80.q = 0;
                             break;
                         case 0x21:
@@ -1380,9 +1401,9 @@ void z80_opcocde()
                             // LD (nnnn),HL // if shifted then IX / IY
                             uint16_t tmp;
                             load_word(&tmp);
-                            z80.mw(tmp, (z80.shifts & DD_SHIFT) ? z80.r8.ixl : ((z80.shifts & FD_SHIFT) ? z80.r8.iyl : z80.r8.l));
+                            store_byte(tmp, (z80.shifts & DD_SHIFT) ? z80.r8.ixl : ((z80.shifts & FD_SHIFT) ? z80.r8.iyl : z80.r8.l));
                             tmp++;
-                            z80.mw(tmp, (z80.shifts & DD_SHIFT) ? z80.r8.ixh : ((z80.shifts & FD_SHIFT) ? z80.r8.iyh : z80.r8.h));
+                            store_byte(tmp, (z80.shifts & DD_SHIFT) ? z80.r8.ixh : ((z80.shifts & FD_SHIFT) ? z80.r8.iyh : z80.r8.h));
                             z80.memptr = tmp; // nnnn + 1
                             z80.q = 0;
                             break;
@@ -1404,9 +1425,9 @@ void z80_opcocde()
                             if (z80.r8.f & FLAG_Z) {
                                 jr();
                             } else {
-                                z80.states += 3;
                                 z80.pc++;
                             }
+                            z80.states += 3;
                             z80.q = 0;
                             break;
                         case 0x29:
@@ -1424,6 +1445,7 @@ void z80_opcocde()
                             *regl = z80.mr(tmp);
                             tmp++;
                             *regh = z80.mr(tmp);
+                            z80.states += 6;
                             z80.memptr = tmp;
                             z80.q = 0;
                             break;
@@ -1447,9 +1469,9 @@ void z80_opcocde()
                             if (!(z80.r8.f & FLAG_C)) {
                                 jr();
                             } else {
-                                z80.states += 3;
                                 z80.pc++;
                             }
+                            z80.states += 3;
                             z80.q = 0;
                             break;
                         case 0x31:
@@ -1461,7 +1483,7 @@ void z80_opcocde()
                             // LD (nnnn),A
                             uint16_t tmp;
                             load_word(&tmp);
-                            z80.mw(tmp, z80.r8.a);
+                            store_byte(tmp, z80.r8.a);
                             z80.memptr = (z80.r16.af & 0xff00) | ((tmp + 1) & 0x00ff);
                             z80.q = 0;
                             break;
@@ -1483,9 +1505,9 @@ void z80_opcocde()
                             if (z80.r8.f & FLAG_C) {
                                 jr();
                             } else {
-                                z80.states +=3;
                                 z80.pc++;
                             }
+                            z80.states += 3;
                             z80.q = 0;
                             break;
                         case 0x39:
@@ -1498,6 +1520,7 @@ void z80_opcocde()
                             uint16_t tmp;
                             load_word(&tmp);
                             z80.r8.a = z80.mr(tmp);
+                            z80.states += 3;
                             z80.memptr = tmp + 1;
                             z80.q = 0;
                             break;
@@ -1517,6 +1540,8 @@ void z80_opcocde()
                             break;
                     }
                 }
+
+                .... šeit pabeidzu
             case 0x40:
 
                 if (command == 0x76) {
