@@ -54,6 +54,6 @@ typedef struct
 
 t_z80 z80;
 
-void z80_init();
+void z80_init(t_memory_reader mr, t_memory_writer mw, t_port_reader pr, t_port_writer pw);
 
 #endif

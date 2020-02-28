@@ -163,7 +163,7 @@ void load_byte(uint8_t *r8)
 
 void store_byte(uint16_t address, uint8_t byte)
 {
-    z80.wr(address, byte);
+    z80.mw(address, byte);
     z80.states += 3;
 }
 
@@ -1551,7 +1551,7 @@ void z80_opcocde()
                     // LD (r),(r)
                     // ne ix ne iy = 4 / (HL) 4 + 3  = 10  OK
                     // ix vai iy = 4 + 4 / (iy + d) = 4 + 4 + 7  = 15 - VAJAG 19 !!!!!!!! + 4 ja  viens vai otrs ir (IX + D)
-             .... šeit pabeidzu
+        ////////////////     .... šeit pabeidzu
 
                     uint8_t *r = load_operand(command & 0x07, &tmp_byte_address, &tmp_byte);
                     store_operand((command >> 3) & 0x07, *r);

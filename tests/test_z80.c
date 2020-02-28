@@ -1,272 +1,343 @@
+#include <stddef.h>
 #include <stdio.h>
 #include "../z80.h"
 
+
+//
+typedef enum {
+    ST_ANY,
+    ST_B1,
+    ST_B0,
+    ST_BC0,
+    ST_BC1,
+    ST_C,
+    ST_NC,
+    ST_Z,
+    ST_NZ,
+    ST_PO,
+    ST_PE,
+    ST_P,
+    ST_M
+} precond;
+
+
 struct test_unit
 {
-    uint8 opcode;
+    uint8_t opcode;
     char *name;
-    uint8 states;
+    uint8_t states;
+    precond pc_type;
 };
+
+
+uint8_t memory_reader(uint16_t address) {
+    return 0x00;
+}
+
+
+void memory_writer(uint16_t address, uint8_t byte) {
+    return;
+}
+
+
+uint8_t port_reader(uint16_t address) {
+    return 0x00;
+}
+
+
+void port_writer(uint16_t address, uint8_t byte) {
+    return;
+}
 
 
 struct test_unit base_opcodes[] = {
 
-    {0x00, "NOP", 4},
-    {0x01, "LD BC,@", 10},
-    {0x02, "LD (BC),A", 7},
-    {0x03, "INC BC", 6},
-    {0x04, "INC B", 4},
-    {0x05, "DEC B", 4},
-    {0x06, "LD B,#", 7},
-    {0x07, "RLCA", 4},
-    {0x08, "EX AF,AF'", 4},
-    {0x09, "ADD HL,BC", 11},
-    {0x0a, "LD A,(BC)", 7},
-    {0x0b, "DEC BC", 6},
-    {0x0c, "INC C", 4},
-    {0x0d, "DEC C", 4},
-    {0x0e, "LD C,#", 7},
-    {0x0f, "RRCA", 4},
-    {0x10, "DJNZ %", "8/13"},
-    {0x11, "LD DE,@", 10},
-    {0x12, "LD (DE),A", 7},
-    {0x13, "INC DE", 6},
-    {0x14, "INC D", 4},
-    {0x15, "DEC D", 4},
-    {0x16, "LD D,#", 7},
-    {0x17, "RLA", 4},
-    {0x18, "JR %", 12},
-    {0x19, "ADD HL,DE", 11},
-    {0x1a, "LD A,(DE)", 7},
-    {0x1b, "DEC DE", 6},
-    {0x1c, "INC E", 4},
-    {0x1d, "DEC E", 4},
-    {0x1e, "LD E,#", 7},
-    {0x1f, "RRA", 4},
-    {0x20, "JR NZ,%", "7/12"},
-    {0x21, "LD HL,@", 10},
-    {0x22, "LD (@),HL", 16},
-    {0x23, "INC HL", 6},
-    {0x24, "INC H"                       , 4"
-    {0x25, "DEC H"                       , 4"
-    {0x26, "LD H,#"                     , 7"
-    {0x27, "DAA"                         , 4"
-    {0x28, "JR Z,%"                 , 7/12"
-    {0x29, "ADD HL,HL"                   , 11"
-    {0x2a, "LD HL,(@)"                , 16"
-    {0x2b, "DEC HL"                      , 6"
-    {0x2c, "INC L"                       , 4"
-    {0x2d, "DEC L"                       , 4"
-    {0x2e, "LD L,#"                     , 7"
-    {0x2f, "CPL"                         , 4"
-    {0x30, "JR NC,%"                , 7/12"
-    {0x31, "LD SP,@"                  , 10"
-    {0x32, "LD (@),A"                 , 13"
-    {0x33, "INC SP"                      , 6"
-    {0x34, "INC (HL)"                    , 11"
-    {0x35, "DEC (HL)"                    , 11"
-    {0x36, "LD (HL),#"                  , 10"
-    {0x37, "SCF"                         , 4"
-    {0x38, "JR C,%"                 , 7/12"
-    {0x39, "ADD HL,SP"                   , 11"
-    {0x3a, "LD A,(@)"                 , 13"
-    {0x3b, "DEC SP"                      , 6"
-    {0x3c, "INC A"                       , 4"
-    {0x3d, "DEC A"                       , 4"
-    {0x3e, "LD A,#",                     , 7"
-    {0x3f, "CCF"                         , 4"
-    {0x40, "LD B,B"                      , 4"
-    {0x41, "LD B,C"                      , 4"
-    {0x42, "LD B,D"                      , 4"
-    {0x43, "LD B,E"                      , 4"
-    {0x44, "LD B,H"                      , 4"
-    {0x45, "LD B,L"                      , 4"
-    {0x46, "LD B,(HL)"                   , 7"
-    {0x47, "LD B,A"                      , 4"
-    {0x48, "LD C,B"                      , 4"
-    {0x49, "LD C,C"                      , 4"
-    {0x4a, "LD C,D"                      , 4"
-    {0x4b, "LD C,E"                      , 4"
-    {0x4c, "LD C,H"                      , 4"
-    {0x4d, "LD C,L"                      , 4"
-    {0x4e, "LD C,(HL)"                   , 7"
-    {0x4f, "LD C,A"                      , 4"
-    {0x50, "LD D,B"                      , 4"
-    {0x51, "LD D,C"                      , 4"
-    {0x52, "LD D,D"                      , 4"
-    {0x53, "LD D,E"                      , 4"
-    {0x54, "LD D,H"                      , 4"
-    {0x55, "LD D,L"                      , 4"
-    {0x56, "LD D,(HL)"                   , 7"
-    {0x57, "LD D,A"                      , 4"
-    {0x58, "LD E,B"                      , 4"
-    {0x59, "LD E,C"                      , 4"
-    {0x5a, "LD E,D"                      , 4"
-    {0x5b, "LD E,E"                      , 4"
-    {0x5c, "LD E,H"                      , 4"
-    {0x5d, "LD E,L"                      , 4"
-    {0x5e, "LD E,(HL)"                   , 7"
-    {0x5f, "LD E,A"                      , 4"
-    {0x60, "LD H,B"                      , 4"
-    {0x61, "LD H,C"                      , 4"
-    {0x62, "LD H,D"                      , 4"
-    {0x63, "LD H,E"                      , 4"
-    {0x64, "LD H,H"                      , 4"
-    {0x65, "LD H,L"                      , 4"
-    {0x66, "LD H,(HL)"                   , 7"
-    {0x67, "LD H,A"                      , 4"
-    {0x68, "LD L,B"                      , 4"
-    {0x69, "LD L,C"                      , 4"
-    {0x6a, "LD L,D"                      , 4"
-    {0x6b, "LD L,E"                      , 4"
-    {0x6c, "LD L,H"                      , 4"
-    {0x6d, "LD L,L"                      , 4"
-    {0x6e, "LD L,(HL)"                   , 7"
-    {0x6f, "LD L,A"                      , 4"
-    {0x70, "LD (HL),B"                   , 7"
-    {0x71, "LD (HL),C"                   , 7"
-    {0x72, "LD (HL),D"                   , 7"
-    {0x73, "LD (HL),E"                   , 7"
-    {0x74, "LD (HL),H"                   , 7"
-    {0x75, "LD (HL),L"                   , 7"
-    {0x76, "HALT"                        , 4"
-    {0x77, "LD (HL),A"                   , 7"
-    {0x78, "LD A,B"                      , 4"
-    {0x79, "LD A,C"                      , 4"
-    {0x7a, "LD A,D"                      , 4"
-    {0x7b, "LD A,E"                      , 4"
-    {0x7c, "LD A,H"                      , 4"
-    {0x7d, "LD A,L"                      , 4"
-    {0x7e, "LD A,(HL)"                   , 7"
-    {0x7f, "LD A,A"                      , 4"
-    {0x80, "ADD A,B"                     , 4"
-    {0x81, "ADD A,C"                     , 4"
-    {0x82, "ADD A,D"                     , 4"
-    {0x83, "ADD A,E"                     , 4"
-    {0x84, "ADD A,H"                     , 4"
-    {0x85, "ADD A,L"                     , 4"
-    {0x86, "ADD A,(HL)"                  , 7"
-    {0x87, "ADD A,A"                     , 4"
-    {0x88, "ADC A,B"                     , 4"
-    {0x89, "ADC A,C"                     , 4"
-    {0x8a, "ADC A,D"                     , 4"
-    {0x8b, "ADC A,E"                     , 4"
-    {0x8c, "ADC A,H"                     , 4"
-    {0x8d, "ADC A,L"                     , 4"
-    {0x8e, "ADC A,(HL)"                  , 7"
-    [0x8f, "ADC A,A"                     , 4"
-    {0x90, "SUB B"                     , 4"
-    {0x91, "SUB C"                     , 4"
-    {0x92, "SUB D"                     , 4"
-    {0x93, "SUB E"                     , 4"
-    {0x94, "SUB H"                     , 4"
-    {0x95, "SUB L"                     , 4"
-    {0x96, "SUB (HL)"                  , 7"
-    {0x97, "SUB A"                     , 4"
-    {0x98, "SBC A,B"                     , 4"
-    {0x99, "SBC A,C"                     , 4"
-    {0x9a, "SBC A,D"                     , 4"
-    {0x9b, "SBC A,E"                     , 4"
-    {0x9c, "SBC A,H"                     , 4"
-    {0x9d, "SBC A,L"                     , 4"
-    {0x9e, "SBC A,(HL)"                  , 7"
-    {0x9f, "SBC A,A"                     , 4"
-    {0xa0, "AND B"                     , 4"
-    {0xa1, "AND C"                     , 4"
-    {0xa2, "AND D"                     , 4"
-    {0xa3, "AND E"                     , 4"
-    {0xa4, "AND H"                     , 4"
-    {0xa5, "AND L"                     , 4"
-    {0xa6, "AND (HL)"                  , 7"
-    {0xa7, "AND A"                     , 4"
-    {0xa8, "XOR B"                     , 4"
-    {0xa9, "XOR C"                     , 4"
-    {0xaa, "XOR D"                     , 4"
-    {0xab, "XOR E"                     , 4"
-    {0xac, "XOR H"                     , 4"
-    {0xad, "XOR L"                     , 4"
-    {0xae, "XOR (HL)"                  , 7"
-    {0xaf, "XOR A"                     , 4"
-    {0xb0, "OR B"                      , 4"
-    {0xb1, "OR C"                      , 4"
-    {0xb2, "OR D"                      , 4"
-    {0xb3, "OR E"                      , 4"
-    {0xb4, "OR H"                      , 4"
-    {0xb5, "OR L"                      , 4"
-    {0xb6, "OR (HL)"                   , 7"
-    {0xb7, "OR A"                      , 4"
-    {0xb8, "CP B"                        , 4"
-    {0xb9, "CP C"                        , 4"
-    {0xba, "CP D"                        , 4"
-    {0xbb, "CP E"                        , 4"
-    {0xbc, "CP H"                        , 4"
-    {0xbd, "CP L"                        , 4"
-    {0xbe, "CP (HL)"                     , 7"
-    {0xbf, "CP A"                        , 4"
-    {0xc0, "RET NZ"                      , 5/11"
-    {0xc1, "POP BC"                      , 10"
-    {0xc2, "JP NZ,@"                  , 10/10"
-    {0xc3, "JP @"                     , 10"
-    {0xc4, "CALL NZ,@"                , 10/17"
-    {0xc5, "PUSH BC"                     , 11"
-    {0xc6, "ADD A,#"                    , 7"
-    {0xc7, "RST 0x00"                    , 11"
-    {0xc8, "RET Z"                       , 5/11"
-    {0xc9, "RET"                         , 10"
-    {0xca, "JP Z,@"                   , 10/10"
-    {0xcb, "shift CB"                    , 4"
-    {0xcc, "CALL Z,@"                 , 10/17"
-    {0xcd, "CALL @"                   , 17"
-    {0xce, "ADC A,#"                    , 7"
-    {0xcf, "RST 0x08"                    , 11"
-    {0xd0, "RET NC"                      , 5/11"
-    {0xd1, "POP DE"                      , 10"
-    {0xd2, "JP NC,@"                  , 10/10"
-    {0xd3, "OUT (#),A"                  , 11"
-    {0xd4, "CALL NC,@"                , 10/17"
-    {0xd5, "PUSH DE"                     , 11"
-    {0xd6, "SUB #"                      , 7"
-    {0xd7, "RST 0x10"                    , 11"
-    {0xd8, "RET C"                       , 5/11"
-    {0xd9, "EXX"                         , 4"
-    {0xda, "JP C,@"                   , 10/10"
-    {0xdb, "IN A,(#)"                   , 11"
-    {0xdc, "CALL C,@"                 , 10/17"
-    {0xdd, "shift DD"                    , 0"
-    {0xde, "SBC A,#"                    , 7"
-    {0xdf, "RST 0x18"                    , 11"
-    {0xe0, "RET PO"                      , 5/11"
-    {0xe1, "POP HL"                      , 10"
-    {0xe2, "JP PO,@"                  , 10/10"
-    {0xe3, "EX (SP),HL"                  , 19"
-    {0xe4, "CALL PO,@"                , 10/17"
-    {0xe5, "PUSH HL"                     , 11"
-    {0xe6, "AND #"                      , 7"
-    {0xe7, "RST 0x20"                    , 11"
-    {0xe8, "RET PE"                      , 5/11"
-    {0xe9, "JP HL"                       , 4"
-    {0xea, "JP PE,@"                  , 10/10"
-    {0xeb, "EX DE,HL"                    , 4"
-    {0xec, "CALL PE,@"                , 10/17"
-    {0xed, "shift ED"                    , 0"
-    {0xee, "XOR #"                      , 7"
-    {0xef, "RST 0x28"                    , 11"
-    {0xf0, "RET P"                       , 5/11"
-    {0xf1, "POP AF"                      , 10"
-    {0xf2, "JP P,@"                   , 10/10"
-    {0xf3, "DI"                          , 4"
-    {0xf4, "CALL P,@"                 , 10/17"
-    {0xf5, "PUSH AF"                     , 11"
-    {0xf6, "OR #"                       , 7"
-    {0xf7, "RST 0x30"                    , 11"
-    {0xf8, "RET M"                       , 5/11"
-    {0xf9, "LD SP,HL"                    , 6"
-    {0xfa, "JP M,@"                   , 10/10"
-    {0xfb, "EI"                          , 4"
-    {0xfc, "CALL M,@"                 , 10/17"
-    {0xfd, "shift FD"                    , 4"
-    {0xfe, "CP #"                       , 7"
-    {0xff, "RST 0x38"                    , 11"
+    {0x00, "NOP",         4, ST_ANY },
+    {0x01, "LD BC,@",    10, ST_ANY },
+    {0x02, "LD (BC),A",   7, ST_ANY },
+    {0x03, "INC BC",      6, ST_ANY },
+    {0x04, "INC B",       4, ST_ANY },
+    {0x05, "DEC B",       4, ST_ANY },
+    {0x06, "LD B,#",      7, ST_ANY },
+    {0x07, "RLCA",        4, ST_ANY },
+    {0x08, "EX AF,AF'",   4, ST_ANY },
+    {0x09, "ADD HL,BC",  11, ST_ANY },
+    {0x0a, "LD A,(BC)",   7, ST_ANY },
+    {0x0b, "DEC BC",      6, ST_ANY },
+    {0x0c, "INC C",       4, ST_ANY },
+    {0x0d, "DEC C",       4, ST_ANY },
+    {0x0e, "LD C,#",      7, ST_ANY },
+    {0x0f, "RRCA",        4, ST_ANY },
+    {0x10, "DJNZ %",      8, ST_B1  },
+    {0x10, "DJNZ %",     13, ST_B0  },
+    {0x11, "LD DE,@",    10, ST_ANY },
+    {0x12, "LD (DE),A",   7, ST_ANY },
+    {0x13, "INC DE",      6, ST_ANY },
+    {0x14, "INC D",       4, ST_ANY },
+    {0x15, "DEC D",       4, ST_ANY },
+    {0x16, "LD D,#",      7, ST_ANY },
+    {0x17, "RLA",         4, ST_ANY },
+    {0x18, "JR %",       12, ST_ANY },
+    {0x19, "ADD HL,DE",  11, ST_ANY },
+    {0x1a, "LD A,(DE)",   7, ST_ANY },
+    {0x1b, "DEC DE",      6, ST_ANY },
+    {0x1c, "INC E",       4, ST_ANY },
+    {0x1d, "DEC E",       4, ST_ANY },
+    {0x1e, "LD E,#",      7, ST_ANY },
+    {0x1f, "RRA",         4, ST_ANY },
+    {0x20, "JR NZ,%",    12, ST_NZ  },
+    {0x20, "JR NZ,%",     7, ST_Z   },
+    {0x21, "LD HL,@",    10, ST_ANY },
+    {0x22, "LD (@),HL",  16, ST_ANY },
+    {0x23, "INC HL",      6, ST_ANY },
+    {0x24, "INC H",       4, ST_ANY },
+    {0x25, "DEC H",       4, ST_ANY },
+    {0x26, "LD H,#",      7, ST_ANY },
+    {0x27, "DAA",         4, ST_ANY },
+    {0x28, "JR Z,%",     12, ST_Z   },
+    {0x28, "JR Z,%",      7, ST_NZ  },
+    {0x29, "ADD HL,HL",  11, ST_ANY },
+    {0x2a, "LD HL,(@)",  16, ST_ANY },
+    {0x2b, "DEC HL",      6, ST_ANY },
+    {0x2c, "INC L",       4, ST_ANY },
+    {0x2d, "DEC L",       4, ST_ANY },
+    {0x2e, "LD L,#",      7, ST_ANY },
+    {0x2f, "CPL",         4, ST_ANY },
+    {0x30, "JR NC,%",    12, ST_NC  },
+    {0x30, "JR NC,%",     7, ST_C   },
+    {0x31, "LD SP,@",    10, ST_ANY },
+    {0x32, "LD (@),A",   13, ST_ANY },
+    {0x33, "INC SP",      6, ST_ANY },
+    {0x34, "INC (HL)",   11, ST_ANY },
+    {0x35, "DEC (HL)",   11, ST_ANY },
+    {0x36, "LD (HL),#",  10, ST_ANY },
+    {0x37, "SCF",         4, ST_ANY },
+    {0x38, "JR C,%",     12, ST_C   },
+    {0x38, "JR C,%",      7, ST_NC  },
+    {0x39, "ADD HL,SP",  11, ST_ANY },
+    {0x3a, "LD A,(@)",   13, ST_ANY },
+    {0x3b, "DEC SP",      6, ST_ANY },
+    {0x3c, "INC A",       4, ST_ANY },
+    {0x3d, "DEC A",       4, ST_ANY },
+    {0x3e, "LD A,#",      7, ST_ANY },
+    {0x3f, "CCF",         4, ST_ANY },
+    {0x40, "LD B,B",      4, ST_ANY },
+    {0x41, "LD B,C",      4, ST_ANY },
+    {0x42, "LD B,D",      4, ST_ANY },
+    {0x43, "LD B,E",      4, ST_ANY },
+    {0x44, "LD B,H",      4, ST_ANY },
+    {0x45, "LD B,L",      4, ST_ANY },
+    {0x46, "LD B,(HL)",   7, ST_ANY },
+    {0x47, "LD B,A",      4, ST_ANY },
+    {0x48, "LD C,B",      4, ST_ANY },
+    {0x49, "LD C,C",      4, ST_ANY },
+    {0x4a, "LD C,D",      4, ST_ANY },
+    {0x4b, "LD C,E",      4, ST_ANY },
+    {0x4c, "LD C,H",      4, ST_ANY },
+    {0x4d, "LD C,L",      4, ST_ANY },
+    {0x4e, "LD C,(HL)",   7, ST_ANY },
+    {0x4f, "LD C,A",      4, ST_ANY },
+    {0x50, "LD D,B",      4, ST_ANY },
+    {0x51, "LD D,C",      4, ST_ANY },
+    {0x52, "LD D,D",      4, ST_ANY },
+    {0x53, "LD D,E",      4, ST_ANY },
+    {0x54, "LD D,H",      4, ST_ANY },
+    {0x55, "LD D,L",      4, ST_ANY },
+    {0x56, "LD D,(HL)",   7, ST_ANY },
+    {0x57, "LD D,A",      4, ST_ANY },
+    {0x58, "LD E,B",      4, ST_ANY },
+    {0x59, "LD E,C",      4, ST_ANY },
+    {0x5a, "LD E,D",      4, ST_ANY },
+    {0x5b, "LD E,E",      4, ST_ANY },
+    {0x5c, "LD E,H",      4, ST_ANY },
+    {0x5d, "LD E,L",      4, ST_ANY },
+    {0x5e, "LD E,(HL)",   7, ST_ANY },
+    {0x5f, "LD E,A",      4, ST_ANY },
+    {0x60, "LD H,B",      4, ST_ANY },
+    {0x61, "LD H,C",      4, ST_ANY },
+    {0x62, "LD H,D",      4, ST_ANY },
+    {0x63, "LD H,E",      4, ST_ANY },
+    {0x64, "LD H,H",      4, ST_ANY },
+    {0x65, "LD H,L",      4, ST_ANY },
+    {0x66, "LD H,(HL)",   7, ST_ANY },
+    {0x67, "LD H,A",      4, ST_ANY },
+    {0x68, "LD L,B",      4, ST_ANY },
+    {0x69, "LD L,C",      4, ST_ANY },
+    {0x6a, "LD L,D",      4, ST_ANY },
+    {0x6b, "LD L,E",      4, ST_ANY },
+    {0x6c, "LD L,H",      4, ST_ANY },
+    {0x6d, "LD L,L",      4, ST_ANY },
+    {0x6e, "LD L,(HL)",   7, ST_ANY },
+    {0x6f, "LD L,A",      4, ST_ANY },
+    {0x70, "LD (HL),B",   7, ST_ANY },
+    {0x71, "LD (HL),C",   7, ST_ANY },
+    {0x72, "LD (HL),D",   7, ST_ANY },
+    {0x73, "LD (HL),E",   7, ST_ANY },
+    {0x74, "LD (HL),H",   7, ST_ANY },
+    {0x75, "LD (HL),L",   7, ST_ANY },
+    {0x76, "HALT",        4, ST_ANY },
+    {0x77, "LD (HL),A",   7, ST_ANY },
+    {0x78, "LD A,B",      4, ST_ANY },
+    {0x79, "LD A,C",      4, ST_ANY },
+    {0x7a, "LD A,D",      4, ST_ANY },
+    {0x7b, "LD A,E",      4, ST_ANY },
+    {0x7c, "LD A,H",      4, ST_ANY },
+    {0x7d, "LD A,L",      4, ST_ANY },
+    {0x7e, "LD A,(HL)",   7, ST_ANY },
+    {0x7f, "LD A,A",      4, ST_ANY },
+    {0x80, "ADD A,B",     4, ST_ANY },
+    {0x81, "ADD A,C",     4, ST_ANY },
+    {0x82, "ADD A,D",     4, ST_ANY },
+    {0x83, "ADD A,E",     4, ST_ANY },
+    {0x84, "ADD A,H",     4, ST_ANY },
+    {0x85, "ADD A,L",     4, ST_ANY },
+    {0x86, "ADD A,(HL)",  7, ST_ANY },
+    {0x87, "ADD A,A",     4, ST_ANY },
+    {0x88, "ADC A,B",     4, ST_ANY },
+    {0x89, "ADC A,C",     4, ST_ANY },
+    {0x8a, "ADC A,D",     4, ST_ANY },
+    {0x8b, "ADC A,E",     4, ST_ANY },
+    {0x8c, "ADC A,H",     4, ST_ANY },
+    {0x8d, "ADC A,L",     4, ST_ANY },
+    {0x8e, "ADC A,(HL)",  7, ST_ANY },
+    {0x8f, "ADC A,A",     4, ST_ANY },
+    {0x90, "SUB B",       4, ST_ANY },
+    {0x91, "SUB C",       4, ST_ANY },
+    {0x92, "SUB D",       4, ST_ANY },
+    {0x93, "SUB E",       4, ST_ANY },
+    {0x94, "SUB H",       4, ST_ANY },
+    {0x95, "SUB L",       4, ST_ANY },
+    {0x96, "SUB (HL)",    7, ST_ANY },
+    {0x97, "SUB A",       4, ST_ANY },
+    {0x98, "SBC A,B",     4, ST_ANY },
+    {0x99, "SBC A,C",     4, ST_ANY },
+    {0x9a, "SBC A,D",     4, ST_ANY },
+    {0x9b, "SBC A,E",     4, ST_ANY },
+    {0x9c, "SBC A,H",     4, ST_ANY },
+    {0x9d, "SBC A,L",     4, ST_ANY },
+    {0x9e, "SBC A,(HL)",  7, ST_ANY },
+    {0x9f, "SBC A,A",     4, ST_ANY },
+    {0xa0, "AND B",       4, ST_ANY },
+    {0xa1, "AND C",       4, ST_ANY },
+    {0xa2, "AND D",       4, ST_ANY },
+    {0xa3, "AND E",       4, ST_ANY },
+    {0xa4, "AND H",       4, ST_ANY },
+    {0xa5, "AND L",       4, ST_ANY },
+    {0xa6, "AND (HL)",    7, ST_ANY },
+    {0xa7, "AND A",       4, ST_ANY },
+    {0xa8, "XOR B",       4, ST_ANY },
+    {0xa9, "XOR C",       4, ST_ANY },
+    {0xaa, "XOR D",       4, ST_ANY },
+    {0xab, "XOR E",       4, ST_ANY },
+    {0xac, "XOR H",       4, ST_ANY },
+    {0xad, "XOR L",       4, ST_ANY },
+    {0xae, "XOR (HL)",    7, ST_ANY },
+    {0xaf, "XOR A",       4, ST_ANY },
+    {0xb0, "OR B",        4, ST_ANY },
+    {0xb1, "OR C",        4, ST_ANY },
+    {0xb2, "OR D",        4, ST_ANY },
+    {0xb3, "OR E",        4, ST_ANY },
+    {0xb4, "OR H",        4, ST_ANY },
+    {0xb5, "OR L",        4, ST_ANY },
+    {0xb6, "OR (HL)",     7, ST_ANY },
+    {0xb7, "OR A",        4, ST_ANY },
+    {0xb8, "CP B",        4, ST_ANY },
+    {0xb9, "CP C",        4, ST_ANY },
+    {0xba, "CP D",        4, ST_ANY },
+    {0xbb, "CP E",        4, ST_ANY },
+    {0xbc, "CP H",        4, ST_ANY },
+    {0xbd, "CP L",        4, ST_ANY },
+    {0xbe, "CP (HL)",     7, ST_ANY },
+    {0xbf, "CP A",        4, ST_ANY },
+    {0xc0, "RET NZ",     11, ST_NZ  },
+    {0xc0, "RET NZ",      5, ST_Z   },
+    {0xc1, "POP BC",     10, ST_ANY },
+    {0xc2, "JP NZ,@",    10, ST_NZ  },
+    {0xc2, "JP NZ,@",    10, ST_Z   },
+    {0xc3, "JP @",       10, ST_ANY },
+    {0xc4, "CALL NZ,@",  17, ST_NZ  },
+    {0xc4, "CALL NZ,@",  10, ST_Z   },
+    {0xc5, "PUSH BC",    11, ST_ANY },
+    {0xc6, "ADD A,#",     7, ST_ANY },
+    {0xc7, "RST 0x00",   11, ST_ANY },
+    {0xc8, "RET Z",      11, ST_Z   },
+    {0xc8, "RET Z",       5, ST_NZ  },
+    {0xc9, "RET",        10, ST_ANY },
+    {0xca, "JP Z,@",     10, ST_Z   },
+    {0xca, "JP Z,@",     10, ST_NZ  },
+    //{0xcb, "shift CB",    4, ST_ANY },
+    {0xcc, "CALL Z,@",   17, ST_Z   },
+    {0xcc, "CALL Z,@",   10, ST_NZ  },
+    {0xcd, "CALL @",     17, ST_ANY },
+    {0xce, "ADC A,#",     7, ST_ANY },
+    {0xcf, "RST 0x08",   11, ST_ANY },
+    {0xd0, "RET NC",     11, ST_NC  },
+    {0xd0, "RET NC",      5, ST_C   },
+    {0xd1, "POP DE",     10, ST_ANY },
+    {0xd2, "JP NC,@",    10, ST_NC  },
+    {0xd2, "JP NC,@",    10, ST_C   },
+    {0xd3, "OUT (#),A",  11, ST_ANY },
+    {0xd4, "CALL NC,@",  17, ST_NC  },
+    {0xd4, "CALL NC,@",  10, ST_C   },
+    {0xd5, "PUSH DE",    11, ST_ANY },
+    {0xd6, "SUB #",       7, ST_ANY },
+    {0xd7, "RST 0x10",   11, ST_ANY },
+    {0xd8, "RET C",      11, ST_C   },
+    {0xd8, "RET C",       5, ST_NC  },
+    {0xd9, "EXX",         4, ST_ANY },
+    {0xda, "JP C,@",     10, ST_C   },
+    {0xda, "JP C,@",     10, ST_NC  },
+    {0xdb, "IN A,(#)",   11, ST_ANY },
+    {0xdc, "CALL C,@",   17, ST_C   },
+    {0xdc, "CALL C,@",   10, ST_NC  },
+    //{0xdd, "shift DD",    4, ST_ANY },
+    {0xde, "SBC A,#",     7, ST_ANY },
+    {0xdf, "RST 0x18",   11, ST_ANY },
+    {0xe0, "RET PO",     11, ST_PO  },
+    {0xe0, "RET PO",      5, ST_PE  },
+    {0xe1, "POP HL",     10, ST_ANY },
+    {0xe2, "JP PO,@",    10, ST_PO  },
+    {0xe2, "JP PO,@",    10, ST_PE  },
+    {0xe3, "EX (SP),HL", 19, ST_ANY },
+    {0xe4, "CALL PO,@",  17, ST_PO  },
+    {0xe4, "CALL PO,@",  10, ST_PE  },
+    {0xe5, "PUSH HL",    11, ST_ANY },
+    {0xe6, "AND #",       7, ST_ANY },
+    {0xe7, "RST 0x20",   11, ST_ANY },
+    {0xe8, "RET PE",     11, ST_PE  },
+    {0xe8, "RET PE",      5, ST_PO  },
+    {0xe9, "JP HL",       4, ST_ANY },
+    {0xea, "JP PE,@",    10, ST_PE  },
+    {0xea, "JP PE,@",    10, ST_PO  },
+    {0xeb, "EX DE,HL",    4, ST_ANY },
+    {0xec, "CALL PE,@",  17, ST_PE  },
+    {0xec, "CALL PE,@",  10, ST_PO  },
+    //{0xed, "shift ED",    4, ST_ANY },
+    {0xee, "XOR #",       7, ST_ANY },
+    {0xef, "RST 0x28",   11, ST_ANY },
+    {0xf0, "RET P",      11, ST_P   },
+    {0xf0, "RET P",       5, ST_M   },
+    {0xf1, "POP AF",     10, ST_ANY },
+    {0xf2, "JP P,@",     10, ST_P   },
+    {0xf2, "JP P,@",     10, ST_M   },
+    {0xf3, "DI",          4, ST_ANY },
+    {0xf4, "CALL P,@",   17, ST_P   },
+    {0xf4, "CALL P,@",   10, ST_M   },
+    {0xf5, "PUSH AF",    11, ST_ANY },
+    {0xf6, "OR #",        7, ST_ANY },
+    {0xf7, "RST 0x30",   11, ST_ANY },
+    {0xf8, "RET M",      11, ST_M   },
+    {0xf8, "RET M",       5, ST_P   },
+    {0xf9, "LD SP,HL",    6, ST_ANY },
+    {0xfa, "JP M,@",     10, ST_M   },
+    {0xfa, "JP M,@",     10, ST_P   },
+    {0xfb, "EI",          4, ST_ANY },
+    {0xfc, "CALL M,@",   17, ST_M   },
+    {0xfc, "CALL M,@",   10, ST_P   },
+    //{0xfd, "shift FD",    4, ST_ANY },
+    {0xfe, "CP #",        7, ST_ANY },
+    {0xff, "RST 0x38",   11, ST_ANY },
+    {0, "", 0, ST_ANY} // dummy item for end of array
 };
 
 
@@ -275,7 +346,15 @@ int main() {
 
     printf("Hello, World!\n");
 
-    z80_init();
+    z80_init(&memory_reader, &memory_writer, &port_reader, &port_writer);
+
+    int i = 0;
+
+    do {
+        // base_opcodes
+        printf("i = %d\n", i);
+
+    } while (i<100);
 
     return 0;
 }
