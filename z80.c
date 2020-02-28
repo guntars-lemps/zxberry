@@ -327,7 +327,7 @@ uint8_t *load_operand(uint8_t n, uint16_t *tmp_byte_address, uint8_t *tmp_byte)
             case 0x06: {
                 int8_t offset = z80.mr(z80.pc);
                 z80.pc++;
-                z80.states += 3;
+                z80.states += 7;
                 *tmp_byte = z80.mr(*tmp_byte_address = z80.r16.ix + offset);
                 return tmp_byte;
             }
@@ -352,7 +352,7 @@ uint8_t *load_operand(uint8_t n, uint16_t *tmp_byte_address, uint8_t *tmp_byte)
             case 0x06: {
                 int8_t offset = z80.mr(z80.pc);
                 z80.pc++;
-                z80.states += 3;
+                z80.states += 7;
                 *tmp_byte = z80.mr(*tmp_byte_address = z80.r16.iy + offset);
                 return tmp_byte;
             }
@@ -409,7 +409,7 @@ void store_operand(uint8_t n, uint8_t tmp_byte)
             case 0x06: {
                 int8_t offset = z80.mr(z80.pc);
                 z80.pc++;
-                z80.states += 3;
+                z80.states += 7;
                 z80.mw(z80.r16.ix + offset, tmp_byte);
                 return;
             }
@@ -441,7 +441,7 @@ void store_operand(uint8_t n, uint8_t tmp_byte)
             case 0x06: {
                 int8_t offset = z80.mr(z80.pc);
                 z80.pc++;
-                z80.states += 3;
+                z80.states += 7;
                 z80.mw(z80.r16.iy + offset, tmp_byte);
                 return;
             }
@@ -1541,7 +1541,7 @@ void z80_opcocde()
                     }
                 }
 
-                .... šeit pabeidzu
+
             case 0x40:
 
                 if (command == 0x76) {
@@ -1549,6 +1549,10 @@ void z80_opcocde()
                     z80.pc--;
                 } else {
                     // LD (r),(r)
+                    // ne ix ne iy = 4 / (HL) 4 + 3  = 10  OK
+                    // ix vai iy = 4 + 4 / (iy + d) = 4 + 4 + 7  = 15 - VAJAG 19 !!!!!!!! + 4 ja  viens vai otrs ir (IX + D)
+             .... šeit pabeidzu
+
                     uint8_t *r = load_operand(command & 0x07, &tmp_byte_address, &tmp_byte);
                     store_operand((command >> 3) & 0x07, *r);
                     z80.q = 0;
